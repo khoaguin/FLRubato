@@ -1,0 +1,4 @@
+github.com/sugarme/gotch v0.9.1 h1:J6JCE1C2AfPmM1xk0p46LdzWtfNvbvZZnWdkj9v54jo=
+github.com/sugarme/gotch v0.9.1/go.mod h1:dien16KQcZPg/g+YiEH3q3ldHlKO2//2I2i2Gp5OQcI=
+github.com/yalue/onnxruntime_go v1.13.0 h1:5HDXHon3EukQMyYA7yPMed/raWaDE/gjwLOwnVoiwy8=
+github.com/yalue/onnxruntime_go v1.13.0/go.mod h1:b4X26A8pekNb1ACJ58wAXgNKeUCGEAQ9dmACut9Sm/4=
