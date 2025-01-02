@@ -334,13 +334,16 @@ func benchmarkRtFRubato(b *testing.B, rubatoParam int) {
 	var fvKeystreams []*Ciphertext
 
 	// Rubato parameter
+	fmt.Println("Rubato parameters")
 	blocksize := RubatoParams[rubatoParam].Blocksize
 	outputsize := blocksize - 4
 	numRound := RubatoParams[rubatoParam].NumRound
 	plainModulus := RubatoParams[rubatoParam].PlainModulus
 	sigma := RubatoParams[rubatoParam].Sigma
+	fmt.Printf("Blocksize: %d, Outputsize: %d\n", blocksize, outputsize)
 
 	// RtF Rubato parameters
+	fmt.Println("RtF Rubato parameters")
 	hbtpParams := RtFRubatoParams[0]
 	params, err := hbtpParams.Params()
 	if err != nil {
@@ -354,6 +357,7 @@ func benchmarkRtFRubato(b *testing.B, rubatoParam int) {
 	stcModDown := RubatoModDownParams[rubatoParam].StCModDown
 
 	// Scheme context and keys
+	fmt.Println("Scheme context and keys")
 	kgen = NewKeyGenerator(params)
 	sk, pk = kgen.GenKeyPairSparse(hbtpParams.H)
 
@@ -363,6 +367,7 @@ func benchmarkRtFRubato(b *testing.B, rubatoParam int) {
 	ckksDecryptor = NewCKKSDecryptor(params, sk)
 
 	// Generating half-bootstrapping keys
+	fmt.Println("Generating half-bootstrapping keys")
 	rotationsHalfBoot := kgen.GenRotationIndexesForHalfBoot(params.LogSlots(), hbtpParams)
 	pDcds := fvEncoder.GenSlotToCoeffMatFV(2) // radix = 2
 	rotationsStC := kgen.GenRotationIndexesForSlotsToCoeffsMat(pDcds)
@@ -394,6 +399,10 @@ func benchmarkRtFRubato(b *testing.B, rubatoParam int) {
 		for i := 0; i < params.N(); i++ {
 			data[s][i] = utils.RandFloat64(-1, 1)
 		}
+	}
+	fmt.Println("Data vector:")
+	for i := 0; i < outputsize; i++ {
+		fmt.Printf("data[%d]: %v\n", i, data[i])
 	}
 
 	nonces = make([][]byte, params.N())

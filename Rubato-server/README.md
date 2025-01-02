@@ -26,4 +26,5 @@ To run the HERA parameter `80as` in the paper, run the following command.
 
 ```go test -timeout=0s -bench=BenchmarkRtFHera80as```
 
-Benchmark with Rubato is also possible in similar way.
+Benchmark with Rubato is also possible in similar way. Run
+```go test -timeout=0s -bench=BenchmarkRtFRubato```
