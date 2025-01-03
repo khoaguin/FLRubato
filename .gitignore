@@ -13,3 +13,7 @@ wheels/
 .vscode/
 
 **/data/**
+libs/
+**/.clients/
+**/.server/
+experimentals/

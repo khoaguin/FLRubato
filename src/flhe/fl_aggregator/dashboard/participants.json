@@ -1,0 +1,14 @@
+[
+    {
+        "Email": "b@openmined.org",
+        "Fl Client Installed": true,
+        "Project Approved": true,
+        "Round (current/total)": "3/3"
+    },
+    {
+        "Email": "c@openmined.org",
+        "Fl Client Installed": false,
+        "Project Approved": false,
+        "Round (current/total)": "0/3"
+    }
+]
