@@ -1,3 +1,4 @@
+// Experiments with the Lattigo library (Encrypted averaging on 1D vectors with the CKKS scheme)
 // Source: https://github.com/tuneinsight/lattigo/blob/v6.1.0/examples/singleparty/tutorials/ckks/main.go#L209
 
 package main
@@ -132,7 +133,7 @@ func main() {
 	fmt.Printf("\n")
 
 	// ciphertext * scalar
-	scalar := 0.25
+	scalar := 0.5
 	for i := 0; i < Slots; i++ {
 		want[i] = values1[i] * scalar
 	}
