@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
@@ -100,26 +101,88 @@ func main() {
 	fmt.Printf("weights.FC1_flatten len %d \n", len(weights.FC1_flatten))
 	fmt.Printf("weights.FC2_flatten len %d \n", len(weights.FC2_flatten))
 
+	// =================================
+	// Plaintext Averaging
+	// =================================
+	wantAvgFC1 := make([]float64, len(weights.FC1_flatten))
+	for i := 0; i < len(weights.FC1_flatten); i++ {
+		wantAvgFC1[i] = (weights.FC1_flatten[i] + weights2.FC1_flatten[i] + weights3.FC1_flatten[i])
+		wantAvgFC1[i] *= 1.0 / 3.0
+	}
+
 	// ==============
-	// Key Generation
+	// Keys Generation
 	// ==============
 	kgen := rlwe.NewKeyGenerator(params)
 	sk := kgen.GenSecretKeyNew()
 	pk := kgen.GenPublicKeyNew(sk) // Note that we can generate any number of public keys associated to the same Secret Key.
-	// rlk := kgen.GenRelinearizationKeyNew(sk)
-	// evk := rlwe.NewMemEvaluationKeySet(rlk)
+	rlk := kgen.GenRelinearizationKeyNew(sk)
+	evk := rlwe.NewMemEvaluationKeySet(rlk)
 
 	// ecd := ckks.NewEncoder(params)
 	ecd2 := ckks.NewEncoder(ckks.Parameters(params))
 
 	weights.FC1_encrypted = encryptFlattened(weights.FC1_flatten, Slots, params, ecd2, pk)
 	weights.FC2_encrypted = encryptFlattened(weights.FC2_flatten, Slots, params, ecd2, pk)
+	weights2.FC1_encrypted = encryptFlattened(weights2.FC1_flatten, Slots, params, ecd2, pk)
+	weights2.FC2_encrypted = encryptFlattened(weights2.FC2_flatten, Slots, params, ecd2, pk)
+	weights3.FC1_encrypted = encryptFlattened(weights3.FC1_flatten, Slots, params, ecd2, pk)
+	weights3.FC2_encrypted = encryptFlattened(weights3.FC2_flatten, Slots, params, ecd2, pk)
 
 	// loop through the weights and print out length and type
 	for i := 0; i < len(weights.FC1_encrypted); i++ {
 		fmt.Printf("weights.FC1_encrypted[%d] type: %T\n", i, weights.FC1_encrypted[i])
 		fmt.Println("metadata: ", weights.FC1_encrypted[i].MetaData)
 	}
+
+	// ==============
+	// Encrypted Averaging
+	// ==============
+	eval := ckks.NewEvaluator(params, evk)
+	scalar := 1.0 / 3.0
+
+	var encryptedSum []*rlwe.Ciphertext
+	for i := 0; i < len(weights.FC1_encrypted); i++ {
+		temp := weights.FC1_encrypted[i]
+		temp, err = eval.AddNew(temp, weights2.FC1_encrypted[i])
+		if err != nil {
+			panic(err)
+		}
+		temp, err = eval.AddNew(temp, weights3.FC1_encrypted[i])
+		if err != nil {
+			panic(err)
+		}
+		temp, err = eval.MulRelinNew(temp, scalar)
+		if err != nil {
+			panic(err)
+		}
+		encryptedSum = append(encryptedSum, temp)
+	}
+	fmt.Println("encryptedSum len: ", len(encryptedSum))
+
+	// =========
+	// Decryptor
+	// =========
+	dec := rlwe.NewDecryptor(params, sk)
+	var plainSum []float64
+	for i := 0; i < len(encryptedSum); i++ {
+		decrypted, err := decryptDecode(dec, ecd2, encryptedSum[i], params)
+		if err != nil {
+			panic(err)
+		}
+		for j := 0; j < len(decrypted); j++ {
+			plainSum = append(plainSum, decrypted[j])
+		}
+	}
+
+	// Calculate the error
+	fmt.Printf("wantAvgFC1 len: %d\n", len(wantAvgFC1))
+	fmt.Printf("plainSum len: %d\n", len(plainSum))
+	// trim sum to have the same length as wantAvgFC1
+	plainSum = plainSum[:len(wantAvgFC1)]
+
+	error := calculateError(plainSum, wantAvgFC1)
+	fmt.Printf("Comparing encrypted and plaintext calculations, error = : %f\n", error)
 }
 
 func print2DLayerDimensions(layer [][]float64) {
@@ -205,4 +268,28 @@ func encryptVec(
 	}
 
 	return ct1
+}
+
+func decryptDecode(
+	dec *rlwe.Decryptor,
+	ecd *ckks.Encoder,
+	ct *rlwe.Ciphertext,
+	params ckks.Parameters,
+) ([]float64, error) {
+	dec_pt := dec.DecryptNew(ct)
+	// Decodes the plaintext
+	have := make([]float64, params.MaxSlots())
+	err := ecd.Decode(dec_pt, have)
+	if err != nil {
+		return nil, err
+	}
+	return have, nil
+}
+
+func calculateError(have []float64, want []float64) float64 {
+	var sum float64
+	for i := 0; i < len(have); i++ {
+		sum += math.Abs(have[i] - want[i])
+	}
+	return sum
 }
