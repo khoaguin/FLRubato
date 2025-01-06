@@ -105,11 +105,15 @@ func main() {
 	// Plaintext Averaging
 	// =================================
 	wantAvgFC1 := make([]float64, len(weights.FC1_flatten))
+	wantAvgFC2 := make([]float64, len(weights.FC2_flatten))
 	for i := 0; i < len(weights.FC1_flatten); i++ {
 		wantAvgFC1[i] = (weights.FC1_flatten[i] + weights2.FC1_flatten[i] + weights3.FC1_flatten[i])
 		wantAvgFC1[i] *= 1.0 / 3.0
 	}
-
+	for i := 0; i < len(weights.FC2_flatten); i++ {
+		wantAvgFC2[i] = (weights.FC2_flatten[i] + weights2.FC2_flatten[i] + weights3.FC2_flatten[i])
+		wantAvgFC2[i] *= 1.0 / 3.0
+	}
 	// ==============
 	// Keys Generation
 	// ==============
@@ -206,9 +210,10 @@ func main() {
 	error := calculateError(decryptedAvg, wantAvgFC1)
 	fmt.Printf("Comparing encrypted and plaintext calculations, error = : %f\n", error)
 
-	// ========================
-	// Saving encrypted weights
-	// ========================
+	// ==================================
+	// Saving encrypted weights to binary
+	// ==================================
+	fmt.Println("Saving encrypted weights to binary")
 	for i := 0; i < len(encryptedAvgFC1); i++ {
 		bytes, err := encryptedAvgFC1[i].MarshalBinary()
 		if err != nil {
@@ -231,15 +236,69 @@ func main() {
 		panic(err)
 	}
 
-	// ========================
-	// Saving decrypted weights into json
-	// ========================
-	saveToJSON(decryptedAvg, weightDir+"avgDecryptedFC1.json")
-	decryptedFC2, err := decryptDecode(dec, ecd2, encryptedAvgFC2[0], params)
+	// ====================================
+	// Loading encrypted avg weights from binary
+	// ====================================
+	fmt.Println("Loading encrypted avg weights from binary")
+	var loadedEncryptedAvgFC1 []*rlwe.Ciphertext
+	var loadedEncryptedAvgFC2 *rlwe.Ciphertext
+	for i := 0; i < len(encryptedAvgFC1); i++ {
+		filename := fmt.Sprintf(weightDir+"avgEncryptedFC1_part%d.bin", i)
+		bytes, err := os.ReadFile(filename)
+		if err != nil {
+			panic(err)
+		}
+		// Create a new ciphertext instance
+		ct := rlwe.NewCiphertext(params, 1, params.MaxLevel())
+		// Unmarshal the binary data into the ciphertext
+		err = ct.UnmarshalBinary(bytes)
+		if err != nil {
+			panic(err)
+		}
+		loadedEncryptedAvgFC1 = append(loadedEncryptedAvgFC1, ct)
+	}
+
+	loadedEncryptedAvgFC2 = rlwe.NewCiphertext(params, 1, params.MaxLevel())
+	err = loadedEncryptedAvgFC2.UnmarshalBinary(bytes)
 	if err != nil {
 		panic(err)
 	}
-	saveToJSON(decryptedFC2, weightDir+"avgDecryptedFC2.json")
+
+	// ========================
+	// Decrypting the loaded weights
+	// ========================
+	fmt.Println("Decrypting the loaded weights from binary")
+	var decryptedAvgFC1 []float64
+	var decryptedAvgFC2 []float64
+	for i := 0; i < len(encryptedAvgFC1); i++ {
+		decrypted, err := decryptDecode(dec, ecd2, loadedEncryptedAvgFC1[i], params)
+		if err != nil {
+			panic(err)
+		}
+		for j := 0; j < len(decrypted); j++ {
+			decryptedAvgFC1 = append(decryptedAvgFC1, decrypted[j])
+		}
+	}
+	decryptedAvgFC1 = decryptedAvgFC1[:len(wantAvgFC1)]
+	error = calculateError(decryptedAvgFC1, wantAvgFC1)
+	fmt.Printf("Comparing decrypted loaded FC1 and plaintext calculations, error = : %f\n", error)
+
+	decrypted, err := decryptDecode(dec, ecd2, loadedEncryptedAvgFC2, params)
+	if err != nil {
+		panic(err)
+	}
+	for j := 0; j < len(decrypted); j++ {
+		decryptedAvgFC2 = append(decryptedAvgFC2, decrypted[j])
+	}
+	decryptedAvgFC2 = decryptedAvgFC2[:len(wantAvgFC2)]
+	error = calculateError(decryptedAvgFC2, wantAvgFC2)
+	fmt.Printf("Comparing decrypted loaded FC2 and plaintext calculations, error = : %f\n", error)
+
+	// ========================
+	// Saving decrypted loaded weights into json
+	// ========================
+	saveToJSON(decryptedAvgFC1, weightDir+"avgDecryptedFC1.json")
+	saveToJSON(decryptedAvgFC2, weightDir+"avgDecryptedFC2.json")
 }
 
 func print2DLayerDimensions(layer [][]float64) {
