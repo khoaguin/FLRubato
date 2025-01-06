@@ -141,7 +141,7 @@ func main() {
 	eval := ckks.NewEvaluator(params, evk)
 	scalar := 1.0 / 3.0
 
-	var encryptedSum []*rlwe.Ciphertext
+	var encryptedAvgFC1 []*rlwe.Ciphertext
 	for i := 0; i < len(weights.FC1_encrypted); i++ {
 		temp := weights.FC1_encrypted[i]
 		temp, err = eval.AddNew(temp, weights2.FC1_encrypted[i])
@@ -156,33 +156,90 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		encryptedSum = append(encryptedSum, temp)
+		encryptedAvgFC1 = append(encryptedAvgFC1, temp)
 	}
-	fmt.Println("encryptedSum len: ", len(encryptedSum))
+	fmt.Println("encryptedAvgFC1FC1 len: ", len(encryptedAvgFC1))
+
+	var encryptedAvgFC2 []*rlwe.Ciphertext
+	for i := 0; i < len(weights.FC2_encrypted); i++ {
+		temp := weights.FC2_encrypted[i]
+		temp, err = eval.AddNew(temp, weights2.FC2_encrypted[i])
+		if err != nil {
+			panic(err)
+		}
+		temp, err = eval.AddNew(temp, weights3.FC2_encrypted[i])
+		if err != nil {
+			panic(err)
+		}
+		temp, err = eval.MulRelinNew(temp, scalar)
+		if err != nil {
+			panic(err)
+		}
+		encryptedAvgFC2 = append(encryptedAvgFC2, temp)
+	}
+	fmt.Println("encryptedAvgFC2 len: ", len(encryptedAvgFC2))
 
 	// =========
 	// Decryptor
 	// =========
 	dec := rlwe.NewDecryptor(params, sk)
-	var plainSum []float64
-	for i := 0; i < len(encryptedSum); i++ {
-		decrypted, err := decryptDecode(dec, ecd2, encryptedSum[i], params)
+	var decryptedAvg []float64
+	for i := 0; i < len(encryptedAvgFC1); i++ {
+		decrypted, err := decryptDecode(dec, ecd2, encryptedAvgFC1[i], params)
 		if err != nil {
 			panic(err)
 		}
 		for j := 0; j < len(decrypted); j++ {
-			plainSum = append(plainSum, decrypted[j])
+			decryptedAvg = append(decryptedAvg, decrypted[j])
 		}
 	}
 
 	// Calculate the error
 	fmt.Printf("wantAvgFC1 len: %d\n", len(wantAvgFC1))
-	fmt.Printf("plainSum len: %d\n", len(plainSum))
+	fmt.Printf("plainSum len: %d\n", len(decryptedAvg))
 	// trim sum to have the same length as wantAvgFC1
-	plainSum = plainSum[:len(wantAvgFC1)]
+	decryptedAvg = decryptedAvg[:len(wantAvgFC1)]
+	// print the first 10 elements
+	fmt.Println("wantAvgFC1: ", wantAvgFC1[:10])
+	fmt.Println("decryptedAvg: ", decryptedAvg[:10])
 
-	error := calculateError(plainSum, wantAvgFC1)
+	error := calculateError(decryptedAvg, wantAvgFC1)
 	fmt.Printf("Comparing encrypted and plaintext calculations, error = : %f\n", error)
+
+	// ========================
+	// Saving encrypted weights
+	// ========================
+	for i := 0; i < len(encryptedAvgFC1); i++ {
+		bytes, err := encryptedAvgFC1[i].MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		filename := fmt.Sprintf(weightDir+"avgEncryptedFC1_part%d.bin", i)
+		err = os.WriteFile(filename, bytes, 0644)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	bytes, err := encryptedAvgFC2[0].MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	filename := weightDir + "avgEncryptedFC2.bin"
+	err = os.WriteFile(filename, bytes, 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	// ========================
+	// Saving decrypted weights into json
+	// ========================
+	saveToJSON(decryptedAvg, weightDir+"avgDecryptedFC1.json")
+	decryptedFC2, err := decryptDecode(dec, ecd2, encryptedAvgFC2[0], params)
+	if err != nil {
+		panic(err)
+	}
+	saveToJSON(decryptedFC2, weightDir+"avgDecryptedFC2.json")
 }
 
 func print2DLayerDimensions(layer [][]float64) {
@@ -292,4 +349,20 @@ func calculateError(have []float64, want []float64) float64 {
 		sum += math.Abs(have[i] - want[i])
 	}
 	return sum
+}
+
+func saveToJSON(data []float64, filename string) {
+	// Create a file
+	file, err := os.Create(filename)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	// Create an encoder and write the data
+	encoder := json.NewEncoder(file)
+	err = encoder.Encode(data)
+	if err != nil {
+		panic(err)
+	}
 }
