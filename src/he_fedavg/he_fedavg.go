@@ -40,7 +40,9 @@ type ModelWeights struct {
 // }
 
 func main() {
-	// Load the weights
+	// ====================================================================
+	// FLClient: Load plaintext weights from JSON (after training in python)
+	// ====================================================================
 	weightDir := "../../weights/mnist/"
 	weights, err := loadWeights(weightDir + "mnist_weights_exclude_137.json")
 	if err != nil {
@@ -71,7 +73,7 @@ func main() {
 	print2DLayerDimensions(weights3.FC2)
 
 	// =================================
-	// Instantiating the ckks.Parameters
+	// FLClient: Instantiating the ckks.Parameters
 	// =================================
 	fmt.Println("--- CKKS Parameters ---")
 	var params ckks.Parameters
@@ -102,7 +104,7 @@ func main() {
 	fmt.Printf("weights.FC2_flatten len %d \n", len(weights.FC2_flatten))
 
 	// =================================
-	// Plaintext Averaging
+	// Debugging: Plaintext Averaging
 	// =================================
 	wantAvgFC1 := make([]float64, len(weights.FC1_flatten))
 	wantAvgFC2 := make([]float64, len(weights.FC2_flatten))
@@ -114,9 +116,9 @@ func main() {
 		wantAvgFC2[i] = (weights.FC2_flatten[i] + weights2.FC2_flatten[i] + weights3.FC2_flatten[i])
 		wantAvgFC2[i] *= 1.0 / 3.0
 	}
-	// ==============
-	// Keys Generation
-	// ==============
+	// ==========================================
+	// FLClient / Trusted Keys Dealer: Keys Generation
+	// ==========================================
 	kgen := rlwe.NewKeyGenerator(params)
 	sk := kgen.GenSecretKeyNew()
 	pk := kgen.GenPublicKeyNew(sk) // Note that we can generate any number of public keys associated to the same Secret Key.
@@ -126,6 +128,9 @@ func main() {
 	// ecd := ckks.NewEncoder(params)
 	ecd2 := ckks.NewEncoder(ckks.Parameters(params))
 
+	// ====================================================
+	// FLClient: Encrypting the weights homomorphically
+	// ====================================================
 	weights.FC1_encrypted = encryptFlattened(weights.FC1_flatten, Slots, params, ecd2, pk)
 	weights.FC2_encrypted = encryptFlattened(weights.FC2_flatten, Slots, params, ecd2, pk)
 	weights2.FC1_encrypted = encryptFlattened(weights2.FC1_flatten, Slots, params, ecd2, pk)
@@ -139,9 +144,9 @@ func main() {
 		fmt.Println("metadata: ", weights.FC1_encrypted[i].MetaData)
 	}
 
-	// ==============
-	// Encrypted Averaging
-	// ==============
+	// ====================================
+	// FLAggregator: Encrypted Averaging
+	// ====================================
 	eval := ckks.NewEvaluator(params, evk)
 	scalar := 1.0 / 3.0
 
@@ -183,9 +188,9 @@ func main() {
 	}
 	fmt.Println("encryptedAvgFC2 len: ", len(encryptedAvgFC2))
 
-	// =========
-	// Decryptor
-	// =========
+	// ===========================
+	// Debugging: Decrypt and Decode
+	// ===========================
 	dec := rlwe.NewDecryptor(params, sk)
 	var decryptedAvg []float64
 	for i := 0; i < len(encryptedAvgFC1); i++ {
@@ -211,7 +216,7 @@ func main() {
 	fmt.Printf("Comparing encrypted and plaintext calculations, error = : %f\n", error)
 
 	// ==================================
-	// Saving encrypted weights to binary
+	// FLAggreagtor: Saving encrypted weights to binary
 	// ==================================
 	fmt.Println("Saving encrypted weights to binary")
 	for i := 0; i < len(encryptedAvgFC1); i++ {
@@ -237,7 +242,7 @@ func main() {
 	}
 
 	// ====================================
-	// Loading encrypted avg weights from binary
+	// FLClient: Loading encrypted avg weights from binary
 	// ====================================
 	fmt.Println("Loading encrypted avg weights from binary")
 	var loadedEncryptedAvgFC1 []*rlwe.Ciphertext
@@ -264,9 +269,9 @@ func main() {
 		panic(err)
 	}
 
-	// ========================
-	// Decrypting the loaded weights
-	// ========================
+	// =======================================
+	// FLClient: Decrypting the loaded weights
+	// =======================================
 	fmt.Println("Decrypting the loaded weights from binary")
 	var decryptedAvgFC1 []float64
 	var decryptedAvgFC2 []float64
@@ -294,9 +299,9 @@ func main() {
 	error = calculateError(decryptedAvgFC2, wantAvgFC2)
 	fmt.Printf("Comparing decrypted loaded FC2 and plaintext calculations, error = : %f\n", error)
 
-	// ========================
-	// Saving decrypted loaded weights into json
-	// ========================
+	// ======================================================
+	// FLClient: Saving decrypted loaded weights into json
+	// ======================================================
 	saveToJSON(decryptedAvgFC1, weightDir+"avgDecryptedFC1.json")
 	saveToJSON(decryptedAvgFC2, weightDir+"avgDecryptedFC2.json")
 }
