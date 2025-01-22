@@ -19,26 +19,6 @@ type ModelWeights struct {
 	FC2_encrypted []*rlwe.Ciphertext
 }
 
-// func inferencePlain(input []float64, weights *ModelWeights) []float64 {
-// 	if len(input) != weights.InputSize {
-// 		panic(fmt.Sprintf("input size mismatch: got %d, expected %d",
-// 			len(input), weights.InputSize))
-// 	}
-
-// 	output := make([]float64, weights.OutputSize)
-
-// 	// Compute matrix multiplication and add bias
-// 	for i := 0; i < weights.OutputSize; i++ {
-// 		sum := weights.Bias[i]
-// 		for j := 0; j < weights.InputSize; j++ {
-// 			sum += input[j] * weights.Weights[i][j]
-// 		}
-// 		output[i] = sum
-// 	}
-
-// 	return output
-// }
-
 func main() {
 	// ====================================================================
 	// FLClient: Load plaintext weights from JSON (after training in python)
