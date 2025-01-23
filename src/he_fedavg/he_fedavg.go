@@ -80,7 +80,7 @@ func main() {
 	// =================================
 	// FLClient: Instantiating the ckks.Parameters
 	// =================================
-	fmt.Println("--- FLClient: Instantiating the CKKS Parametersckks.Parameters ---")
+	fmt.Println("--- FLClient: Instantiating the CKKS Parameters ---")
 	var params ckks.Parameters
 	if params, err = ckks.NewParametersFromLiteral(
 		ckks.ParametersLiteral{
