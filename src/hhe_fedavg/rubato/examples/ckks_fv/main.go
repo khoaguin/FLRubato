@@ -1202,7 +1202,8 @@ func myRubato2(rubatoParam int, paramIndex int, radix int, fullCoeffs bool) {
 	// Encode float data added by keystream to plaintext coefficients
 	fmt.Printf("\n--- Client: Data Generation ---\n")
 	fvEvaluator = ckks_fv.NewMFVEvaluator(params, ckks_fv.EvaluationKey{Rlk: rlk, Rtks: rotkeys}, pDcds)
-	outputsize := blocksize - 4
+	// outputsize := belocksize - 4
+	outputsize := 1
 	coeffs := make([][]float64, outputsize)
 	for s := 0; s < outputsize; s++ {
 		coeffs[s] = make([]float64, params.N())
@@ -1213,7 +1214,8 @@ func myRubato2(rubatoParam int, paramIndex int, radix int, fullCoeffs bool) {
 		key[i] = uint64(i + 1)
 	}
 
-	numCols := 784
+	// numCols := 784
+	numCols := params.Slots()
 	data = make([][]float64, outputsize)
 	for s := 0; s < outputsize; s++ {
 		data[s] = make([]float64, numCols)
@@ -1323,6 +1325,7 @@ func main() {
 	// testPlainRubato(ckks_fv.RUBATO80L)
 	// testFVRubato(ckks_fv.RUBATO80L)
 	// findRubatoModDown(ckks_fv.RUBATO80S, 2)
+	// testRtFRubatoModDown(4, 0, 2, false)
 	// myRubato(4, 0, 2, false)
 	myRubato2(4, 0, 2, false)
 }
