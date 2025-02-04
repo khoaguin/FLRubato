@@ -23,3 +23,4 @@ experimentals/
 
 # The CKKS ciphertexts: be carefull since this one can go wild!
 /ciphertexts/*.bin
+/weights/*.bin
