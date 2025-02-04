@@ -17,3 +17,11 @@ libs/
 **/.clients/
 **/.server/
 experimentals/
+
+# The HE keys: be carefull since this one can go wild!
+/keys/*.bin
+
+# The CKKS ciphertexts: be carefull since this one can go wild!
+/ciphertexts/*.bin
+/weights/*.bin
+/weights/mnist/*.bin
