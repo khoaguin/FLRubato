@@ -251,7 +251,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	logger.PrintMemUsage("FvKeyStreams")
 
 	var ctBoot *RtF.Ciphertext
-	outputSize = 1 // for testing
+	outputSize = 2 // for testing, this is the FC1 in this case divided into two ciphertexts
 	for s := 0; s < outputSize; s++ {
 		// Encrypt and mod switch to the lowest level
 		ciphertext := RtF.NewCiphertextFVLvl(params, 1, 0)
@@ -299,6 +299,19 @@ func preparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, 
 	logger.PrintFormatted("We have the flatten weights as [%d] and [%d]", len(mws[0].FC1Flatten), len(mws[0].FC2Flatten))
 
 	cnt := 0 // will use this counter for locating
+	// basically for each flattened FCx we will take as much full ciphertext space as it needs,
+	// for example, here, for 128L sec, the output size is 60, so we have 60* ciphers each with
+	// 65536 elements. The FC1 has 100352 elements; therefore, we need 2 full ciphertext spaces to
+	// put it there. Of course, there will be some free space, which we use padding and 0 value.
+	// The data will be like:
+	// [0][FC1:Padding]
+	// [1][FC1:Padding]
+	// [2][FC2:Padding]
+	// [0][FC1:Padding]
+	// [1][FC1:Padding]
+	// [2][FC2:Padding]
+	//	...
+	// [60][Padding]
 	for _, mw := range mws {
 		// start with FC1
 		cipherPerFC1 := int(math.Ceil(float64(len(mw.FC1Flatten)) / float64(params.N())))
@@ -359,7 +372,11 @@ func preparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, 
 }
 
 // SaveCipher save a ciphertext in the provided path
-func SaveCipher(logger utils.Logger, index int, ciphersDir string, ciphertext *RtF.Ciphertext) {
+func SaveCipher(
+	logger utils.Logger,
+	index int,
+	ciphersDir string,
+	ciphertext *RtF.Ciphertext) {
 	logger.PrintHeader("Save the CKKS ciphertext in a file for further computation")
 	var err error
 	fileName := configs.CtNameFix + strconv.Itoa(index) + configs.CtFormat
@@ -368,7 +385,11 @@ func SaveCipher(logger utils.Logger, index int, ciphersDir string, ciphertext *R
 }
 
 // LoadCipher save a ciphertext in the provided path
-func LoadCipher(logger utils.Logger, fileIndex int, ciphersDir string, params *RtF.Parameters) *RtF.Ciphertext {
+func LoadCipher(
+	logger utils.Logger,
+	fileIndex int,
+	ciphersDir string,
+	params *RtF.Parameters) *RtF.Ciphertext {
 	logger.PrintHeader("Load the CKKS ciphertext from the file")
 	var err error
 	fileName := configs.CtNameFix + strconv.Itoa(fileIndex) + configs.CtFormat
