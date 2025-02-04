@@ -14,58 +14,39 @@ import (
 	"github.com/tuneinsight/lattigo/v6/schemes/ckks"
 )
 
-type ModelWeights struct {
-	FC1          [][]float64 `json:"fc1"`
-	FC2          [][]float64 `json:"fc2"`
-	FC1Flatten   []float64
-	FC2Flatten   []float64
-	FC1Encrypted []*rlwe.Ciphertext
-	FC2Encrypted []*rlwe.Ciphertext
-}
-
 func main() {
 	// ====================================================================
 	// FLClient: Load plaintext weights from JSON (after training in python)
 	// ====================================================================
+	var err error
 	root := FLRubato.FindRootPath()
 	logger := utils.NewLogger(utils.DEBUG)
 	nMaxElmPrint := 4 // the maximum number of elements we want to be printed when printing a vector
 	logger.PrintHeader("FLClient: Load plaintext weights from JSON (after training in python)")
 	weightDir := filepath.Join(root, configs.MNIST)
-	weights, err := loadWeights(weightDir + "/mnist_weights_exclude_137.json")
-	if err != nil {
-		logger.PrintFormatted("Error loading weights: %v", err)
-		return
-	}
-	weights2, err := loadWeights(weightDir + "/mnist_weights_exclude_258.json")
-	if err != nil {
-		logger.PrintFormatted("Error loading weights: %v", err)
-		return
-	}
-	weights3, err := loadWeights(weightDir + "/mnist_weights_exclude_469.json")
-	if err != nil {
-		logger.PrintFormatted("Error loading weights: %v", err)
-		return
-	}
+
+	weights := utils.NewModelWeights()
+	err = weights.LoadWeights(weightDir + "/mnist_weights_exclude_137.json")
+	utils.HandleError(err)
+
+	weights2 := utils.NewModelWeights()
+	err = weights2.LoadWeights(weightDir + "/mnist_weights_exclude_258.json")
+	utils.HandleError(err)
+
+	weights3 := utils.NewModelWeights()
+	err = weights3.LoadWeights(weightDir + "/mnist_weights_exclude_469.json")
+	utils.HandleError(err)
 
 	// Print the weights' dimensions
 	logger.PrintMessage("Model 1")
-	print2DLayerDimensions(logger, weights.FC1)
-	print2DLayerDimensions(logger, weights.FC2)
-	logger.PrintMessage("Model 2")
-	print2DLayerDimensions(logger, weights2.FC1)
-	print2DLayerDimensions(logger, weights2.FC2)
-	logger.PrintMessage("Model 3")
-	print2DLayerDimensions(logger, weights3.FC1)
-	print2DLayerDimensions(logger, weights3.FC2)
+	weights.Print2DLayerDimension(logger)
 
-	// Flatten the weights
-	weights.FC1Flatten = flatten2D(weights.FC1)
-	weights.FC2Flatten = flatten2D(weights.FC2)
-	weights2.FC1Flatten = flatten2D(weights2.FC1)
-	weights2.FC2Flatten = flatten2D(weights2.FC2)
-	weights3.FC1Flatten = flatten2D(weights3.FC1)
-	weights3.FC2Flatten = flatten2D(weights3.FC2)
+	logger.PrintMessage("Model 2")
+	weights2.Print2DLayerDimension(logger)
+
+	logger.PrintMessage("Model 3")
+	weights3.Print2DLayerDimension(logger)
+
 	logger.PrintFormatted("weights.FC1_flatten len: %d", len(weights.FC1Flatten))
 	logger.PrintFormatted("weights.FC2_flatten len: %d", len(weights.FC2Flatten))
 
@@ -229,6 +210,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 	filename := weightDir + "avgEncryptedFC2.bin"
 	err = os.WriteFile(filename, bytes, 0644)
 	if err != nil {
@@ -299,40 +281,6 @@ func main() {
 	logger.PrintHeader("FLClient: Saving decrypted loaded weights into json")
 	saveToJSON(decryptedAvgFC1, weightDir+"avgDecryptedFC1.json")
 	saveToJSON(decryptedAvgFC2, weightDir+"avgDecryptedFC2.json")
-}
-
-func print2DLayerDimensions(logger utils.Logger, layer [][]float64) {
-	logger.PrintFormatted("Shape: [%d, %d]", len(layer), len(layer[0]))
-}
-
-func loadWeights(filename string) (*ModelWeights, error) {
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, fmt.Errorf("error reading file: %v", err)
-	}
-
-	var weights ModelWeights
-	if err := json.Unmarshal(data, &weights); err != nil {
-		return nil, fmt.Errorf("error parsing JSON: %v", err)
-	}
-
-	return &weights, nil
-}
-
-// Flatten2D converts a 2D slice into a 1D slice by concatenating all rows (row major packing)
-func flatten2D(matrix [][]float64) []float64 {
-	// Calculate the total length needed
-	totalLen := len(matrix) * len(matrix[0])
-
-	// Create the flattened slice with the exact capacity needed
-	flattened := make([]float64, 0, totalLen)
-
-	// Append all elements
-	for _, row := range matrix {
-		flattened = append(flattened, row...)
-	}
-
-	return flattened
 }
 
 func encryptFlattened(plaintext []float64, numSlots int, params ckks.Parameters, encoder *ckks.Encoder, pk *rlwe.PublicKey) []*rlwe.Ciphertext {
