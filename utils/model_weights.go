@@ -37,7 +37,8 @@ func (mw *ModelWeights) LoadWeights(path string) error {
 
 // Print2DLayerDimension print the dimensions of 2D model
 func (mw *ModelWeights) Print2DLayerDimension(logger Logger) {
-	logger.PrintFormatted("Shape: [%d, %d]", len(mw.FC1), len(mw.FC1[0]))
+	logger.PrintFormatted("Shape: FC1[%d, %d]", len(mw.FC1), len(mw.FC1[0]))
+	logger.PrintFormatted("Shape: FC2[%d, %d]", len(mw.FC2), len(mw.FC2[0]))
 }
 
 // Flatten2D converts a 2D slice into a 1D slice by concatenating all rows (row major packing)

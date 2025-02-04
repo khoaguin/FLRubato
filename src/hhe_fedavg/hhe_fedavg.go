@@ -7,6 +7,7 @@ import (
 	"flhhe/src/RtF"
 	"flhhe/utils"
 	"fmt"
+	"log"
 	"math"
 	"path/filepath"
 	"strconv"
@@ -21,7 +22,7 @@ import (
 		- Rubato, depending on the parameter selection, has a fixed block size as BS={16, 36, 64}
 		|-> with corresponding plaintext modulus logP: {26, 25, 25} and LogN = 16, logSlots = 15,
 		|-> with a scaling factor logSF = {45}. Therefore, we can make a matrix as following
-		|-> data = [BS][N]float64.
+		|-> data = [BS-4][N]float64.
 	4. Generation of the SymKey, Nonce, and Counter
 		- The SymKey will be as K = [BS]uint64
 		- The Nonce will be as nonces = [N][8]byte
@@ -52,15 +53,42 @@ import (
 */
 //================= The End xD =================//
 func main() {
-	// Always use fullCoffs = true
-	Rubato(RtF.RUBATO128L, true)
+	logger := utils.NewLogger(utils.DEBUG)
+	root := FLRubato.FindRootPath()
 
+	mws := make([]utils.ModelWeights, 3)
+	mws[0], mws[1], mws[2] = OpenModelWeights(logger, root)
+
+	for _, mw := range mws {
+		mw.Print2DLayerDimension(logger)
+	}
+
+	// Always use fullCoffs = true
+	Rubato(logger, root, RtF.RUBATO128L, mws, true)
+}
+
+// OpenModelWeights read the model weights from
+func OpenModelWeights(logger utils.Logger, root string) (utils.ModelWeights, utils.ModelWeights, utils.ModelWeights) {
+	var err error
+	weightDir := filepath.Join(root, configs.MNIST)
+	logger.PrintHeader("FLClient: Load plaintext weights from JSON (after training in python)")
+	w1 := utils.NewModelWeights()
+	err = w1.LoadWeights(weightDir + "/mnist_weights_exclude_137.json")
+	utils.HandleError(err)
+
+	w2 := utils.NewModelWeights()
+	err = w2.LoadWeights(weightDir + "/mnist_weights_exclude_258.json")
+	utils.HandleError(err)
+
+	w3 := utils.NewModelWeights()
+	err = w3.LoadWeights(weightDir + "/mnist_weights_exclude_469.json")
+	utils.HandleError(err)
+
+	return w1, w2, w3
 }
 
 // Rubato is the one
-func Rubato(paramIndex int, fullCoffs bool) {
-	logger := utils.NewLogger(utils.DEBUG)
-	root := FLRubato.FindRootPath()
+func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelWeights, fullCoffs bool) {
 	keysDir := filepath.Join(root, configs.Keys)
 	ciphersDir := filepath.Join(root, configs.Ciphertexts)
 
@@ -128,14 +156,8 @@ func Rubato(paramIndex int, fullCoffs bool) {
 	var fvKeyStreams []*RtF.Ciphertext
 
 	if fullCoffs {
-		data = make([][]float64, outputSize)
-		for s := 0; s < outputSize; s++ {
-			data[s] = make([]float64, params.N())
-			for i := 0; i < params.N(); i++ {
-				data[s][i] = utils.RandFloat64(-1, 1)
-			}
-		}
-
+		logger.PrintHeader("Let's make the data usable! (full coefficients)")
+		data = preparingData(logger, outputSize, params, mws)
 		nonces = make([][]byte, params.N())
 		for i := 0; i < params.N(); i++ {
 			nonces[i] = make([]byte, 64)
@@ -196,6 +218,7 @@ func Rubato(paramIndex int, fullCoffs bool) {
 			}
 		}
 
+		// encrypt the plaintext data using the symmetric key stream
 		plainCKKSRingTs = make([]*RtF.PlaintextRingT, outputSize)
 		for s := 0; s < outputSize; s++ {
 			plainCKKSRingTs[s] = ckksEncoder.EncodeCoeffsRingTNew(coefficients[s], messageScaling)
@@ -228,7 +251,7 @@ func Rubato(paramIndex int, fullCoffs bool) {
 	logger.PrintMemUsage("FvKeyStreams")
 
 	var ctBoot *RtF.Ciphertext
-	outputSize = 2 // for testing
+	outputSize = 1 // for testing
 	for s := 0; s < outputSize; s++ {
 		// Encrypt and mod switch to the lowest level
 		ciphertext := RtF.NewCiphertextFVLvl(params, 1, 0)
@@ -261,6 +284,78 @@ func Rubato(paramIndex int, fullCoffs bool) {
 		// save the CKKS ciphertext in a file for further computation
 		SaveCipher(logger, s, ciphersDir, ctBoot)
 	}
+}
+
+func preparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, mws []utils.ModelWeights) [][]float64 {
+	data := make([][]float64, outputSize)
+	//for s := 0; s < outputSize; s++ {
+	//	data[s] = make([]float64, params.N())
+	//	for i := 0; i < params.N(); i++ {
+	//		data[s][i] = utils.RandFloat64(-1, 1)
+	//	}
+	//}
+
+	logger.PrintFormatted("The data structure is as [%d][%d].", outputSize, params.N())
+	logger.PrintFormatted("We have the flatten weights as [%d] and [%d]", len(mws[0].FC1Flatten), len(mws[0].FC2Flatten))
+
+	cnt := 0 // will use this counter for locating
+	for _, mw := range mws {
+		// start with FC1
+		cipherPerFC1 := int(math.Ceil(float64(len(mw.FC1Flatten)) / float64(params.N())))
+		paddingLenFC1 := params.N() - (len(mw.FC1Flatten) / cipherPerFC1)
+		fc1Space := params.N() - paddingLenFC1
+		logger.PrintFormatted("Number of ciphers required to store FC1: %d", cipherPerFC1)
+		logger.PrintFormatted("Padding length required to store FC1: %d", paddingLenFC1)
+		if cipherPerFC1 > 0 {
+			for i := 0; i < cipherPerFC1; i++ {
+				data[cnt] = make([]float64, params.N())
+				for j := 0; j < params.N(); j++ {
+					if j < fc1Space {
+						data[cnt][j] = mw.FC1Flatten[(i*fc1Space)+j]
+					} else {
+						data[cnt][j] = float64(0) // for padding
+					}
+				}
+				cnt++ // moving to the next plaintext slot (row)
+			}
+		} else {
+			log.Fatalln("Something is wrong with the input data length!")
+		}
+
+		logger.PrintMessages("FC1 data space and the padding: ", data[cnt-1][fc1Space-4:fc1Space+4])
+		// then FC2
+		cipherPerFC2 := int(math.Ceil(float64(len(mw.FC2Flatten)) / float64(params.N())))
+		paddingLenFC2 := params.N() - (len(mw.FC2Flatten) / cipherPerFC2)
+		fc2Space := params.N() - paddingLenFC2
+		logger.PrintFormatted("Number of ciphers required to store FC2: %d", cipherPerFC2)
+		logger.PrintFormatted("Padding length required to store FC2: %d", paddingLenFC2)
+		if cipherPerFC2 > 0 {
+			for i := 0; i < cipherPerFC2; i++ {
+				data[cnt] = make([]float64, params.N())
+				for j := 0; j < params.N(); j++ {
+					if j < fc2Space {
+						data[cnt][j] = mw.FC2Flatten[(i*fc2Space)+j]
+					} else {
+						data[cnt][j] = float64(0) // for padding
+					}
+				}
+				cnt++ // moving to the next plaintext slot (row)
+			}
+		} else {
+			log.Fatalln("Something is wrong with the input data length!")
+		}
+		logger.PrintMessages("FC2 data space and the padding: ", data[cnt-1][fc2Space-4:fc2Space+4])
+
+	}
+
+	// filling the rest with padding (this is not efficient at all) -> the solution will be changing the parameters
+	for s := cnt; s < outputSize; s++ {
+		data[s] = make([]float64, params.N())
+		for i := 0; i < params.N(); i++ {
+			data[s][i] = float64(0)
+		}
+	}
+	return data
 }
 
 // SaveCipher save a ciphertext in the provided path
