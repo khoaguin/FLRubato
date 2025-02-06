@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -131,10 +132,20 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	// !!!
 	// NOTE: We call this function only once to generate the keys and store them in files
-	//InitialKeyGen(logger, keysDir, params, halfBsParams, fullCoffs)
+	InitialKeyGen(logger, keysDir, params, halfBsParams, fullCoffs)
 
 	// reading the already generated keys from a previous step, it will save time and memory :)
-	fvEncoder, ckksEncoder, fvEncryptor, ckksDecryptor, halfBootstrapper, fvEvaluator = Setup(logger, keysDir, params, halfBsParams)
+	fvEncoder,
+		ckksEncoder,
+		fvEncryptor,
+		ckksDecryptor,
+		halfBootstrapper,
+		fvEvaluator = Setup(
+		logger,
+		keysDir,
+		params,
+		halfBsParams,
+	)
 
 	// Allocating the coefficients
 	coefficients := make([][]float64, outputSize)
@@ -143,8 +154,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	}
 
 	// Key generation
-	var key []uint64
-	key = make([]uint64, blockSize)
+	key := make([]uint64, blockSize)
 	for i := 0; i < blockSize; i++ {
 		key[i] = uint64(i + 1) // Use (1, ..., 16) for testing
 	}
@@ -157,6 +167,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	if fullCoffs {
 		logger.PrintHeader("Let's make the data usable! (full coefficients)")
+		logger.PrintFormatted("params.N() = %d", params.N())
 		data = preparingData(logger, outputSize, params, mws)
 		nonces = make([][]byte, params.N())
 		for i := 0; i < params.N(); i++ {
@@ -189,6 +200,8 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 			}
 		}
 	} else {
+		logger.PrintHeader("Not using full coefficients!")
+		logger.PrintFormatted("params.Slots() = %d", params.Slots())
 		data = make([][]float64, outputSize)
 		for s := 0; s < outputSize; s++ {
 			data[s] = make([]float64, params.Slots())
@@ -406,8 +419,26 @@ func InitialKeyGen(
 	params *RtF.Parameters,
 	hbtParams *RtF.HalfBootParameters,
 	fullCoffs bool) {
+
 	logger.PrintHeader("Initializing the generation of keys and public parameters")
 	var err error
+
+	// Check if all required files exist
+	secretKeyPath := filepath.Join(keysDir, configs.SecretKey)
+	publicKeyPath := filepath.Join(keysDir, configs.PublicKey)
+	rotationKeyPath := filepath.Join(keysDir, configs.RotationKeys)
+	relinKeysPath := filepath.Join(keysDir, configs.RelinearizationKeys)
+
+	fileExists := func(path string) bool {
+		_, err := os.Stat(path)
+		return !os.IsNotExist(err)
+	}
+
+	if fileExists(secretKeyPath) || fileExists(publicKeyPath) ||
+		fileExists(rotationKeyPath) || fileExists(relinKeysPath) {
+		logger.PrintHeader("Some key files already exist, skipping generation")
+		return
+	}
 
 	kgen := RtF.NewKeyGenerator(params)
 	sk, pk := kgen.GenKeyPairSparse(hbtParams.H)
@@ -453,8 +484,6 @@ func InitialKeyGen(
 	logger.PrintRunningTime("Relinearization Keys Generation", t)
 	err = utils.Serialize(rlk, filepath.Join(keysDir, configs.RelinearizationKeys))
 	utils.HandleError(err)
-
-	return
 }
 
 func Setup(
