@@ -20,10 +20,13 @@ libs/
 experimentals/
 
 # The HE keys: be carefull since this one can go wild!
-/keys/*.bin
+/keys/
 
 # The CKKS ciphertexts: be carefull since this one can go wild!
-/ciphertexts/*.bin
+ciphertexts/*.bin
 
 # The weights: be carefull since this one can go wild!
 /weights/*
+
+# outputs
+outputs/

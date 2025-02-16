@@ -2,8 +2,11 @@ package utils
 
 import (
 	"encoding/json"
-	"github.com/tuneinsight/lattigo/v6/core/rlwe"
+	"flhhe/configs"
 	"os"
+	"path/filepath"
+
+	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 )
 
 type ModelWeights struct {
@@ -49,4 +52,17 @@ func Flatten2D(matrix [][]float64) []float64 {
 		flattened = append(flattened, row...)
 	}
 	return flattened
+}
+
+func OpenModelWeights(logger Logger, root string, weightFile string) ModelWeights {
+	var err error
+	weightDir := filepath.Join(root, configs.MNIST)
+
+	weightPath := filepath.Join(weightDir, weightFile)
+	logger.PrintFormatted("Loading weights from %s", weightPath)
+	weights := NewModelWeights()
+	err = weights.LoadWeights(weightPath)
+	HandleError(err)
+
+	return weights
 }
