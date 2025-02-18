@@ -121,8 +121,6 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 		params.SetLogFVSlots(params.LogSlots())
 	}
 
-	// !!!
-	// NOTE: We call this function only once to generate the keys and store them in files
 	logger.PrintHeader("[Client - Initialization] HHE keys generation")
 	HHEKeyGen(logger, keysDir, params, halfBsParams, fullCoffs)
 
@@ -140,34 +138,21 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 		coefficients[s] = make([]float64, params.N())
 	}
 
-	// Symmetric Key generation
-	// logger.PrintHeader("[Client - Initialization] Symmetric Key Generation")
-	// t := time.Now()
-	// key := make([]uint64, blockSize)
-	// for i := 0; i < blockSize; i++ {
-	// 	key[i] = uint64(i + 1) // Use (1, ..., 16) for testing
-	// }
-	// logger.PrintRunningTime("Symmetric Key Generation", t)
-
-	// logger.PrintHeader("[Client - Initialization] Compute FV Ciphertext of the Symmetric Key. Sends to the Server")
-	// t = time.Now()
-	// rubato := RtF.NewMFVRubato(paramIndex, params, fvEncoder, fvEncryptor, fvEvaluator, rubatoModDown[0])
-	// kCt := rubato.EncKey(key)
-	// logger.PrintRunningTime("Time to compute FV Ciphertext of the Symmetric Key", t)
-
+	// Rubato instance
 	rubato := RtF.NewMFVRubato(paramIndex, params, fvEncoder, fvEncryptor, fvEvaluator, rubatoModDown[0])
+
+	logger.PrintHeader("[Client - Initialization] Symmetric Key Generation and Encryption")
 	key, kCt, err := SymmetricKeyGen(logger, keysDir, blockSize, params, rubato)
 	if err != nil {
-		log.Fatalf("failed to generate symmetric key: %v", err)
+		log.Fatalf("Failed to generate symmetric key: %v", err)
 	}
 
 	var data [][]float64
 	var nonces [][]byte
 	var counter []byte
 	var keystream [][]uint64
-	var fvKeyStreams []*RtF.Ciphertext
 
-	logger.PrintHeader("[Client] Encrypting the plaintext data into symmetric ciphertext (using full coefficients)")
+	logger.PrintHeader("[Client] Preparing the data")
 	logger.PrintFormatted("params.N() = %d", params.N())
 	data = preparingData(logger, outputSize, params, mws)
 
@@ -183,7 +168,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	rand.Read(counter)
 	logger.PrintFormatted("Counter diminsion: [%d]", len(counter))
 
-	logger.PrintHeader("[Client - Offline] Generating the keystream")
+	logger.PrintHeader("[Client - Offline] Generating the keystream z")
 	keystream = make([][]uint64, params.N())
 	for i := 0; i < params.N(); i++ {
 		keystream[i] = RtF.PlainRubato(blockSize, numRound, nonces[i], counter, key, params.PlainModulus(), sigma)
@@ -197,28 +182,33 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 		}
 	}
 
-	logger.PrintMessage("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
+	logger.PrintHeader("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
 	plainCKKSRingTs = make([]*RtF.PlaintextRingT, outputSize)
 	for s := 0; s < outputSize; s++ {
-		plainCKKSRingTs[s] = ckksEncoder.EncodeCoeffsRingTNew(coefficients[s], messageScaling)  // scales up the plaintext message
+		plainCKKSRingTs[s] = ckksEncoder.EncodeCoeffsRingTNew(coefficients[s], messageScaling) // scales up the plaintext message
 		poly := plainCKKSRingTs[s].Value()[0]
 		for i := 0; i < params.N(); i++ {
 			j := utils.BitReverse64(uint64(i), uint64(params.LogN()))
-			poly.Coeffs[0][j] = (poly.Coeffs[0][j] + keystream[i][s]) % params.PlainModulus()  // modulo q addition between the keystream to the scaled message
+			poly.Coeffs[0][j] = (poly.Coeffs[0][j] + keystream[i][s]) % params.PlainModulus() // modulo q addition between the keystream to the scaled message
 		}
 	}
 
+	var fvKeyStreams []*RtF.Ciphertext
 	//fvKeyStreams = rubato.Crypt(nonces, counter, kCt, rubatoModDown)
-	logger.PrintHeader("[Server - Offline] Evaluates the keystreams and does SlotToCoeffs (produce Z)")
+	logger.PrintHeader("[Server - Offline] Evaluates the keystreams (Eval^{FV} to produce V")
 	t := time.Now()
-	fvKeyStreams = rubato.CryptNoModSwitch(nonces, counter, kCt)
+	fvKeyStreams = rubato.CryptNoModSwitch(nonces, counter, kCt) // Compute ciphertexts without modulus switching
+	logger.PrintRunningTime("Time to evaluate the keystreams (Eval^{FV}) to produce V", t)
+
+	logger.PrintHeader("[Server - Offline] Performs linear transformation SlotToCoeffs^{FV} to produce Z")
+	t = time.Now()
 	for i := 0; i < outputSize; i++ {
 		fvKeyStreams[i] = fvEvaluator.SlotsToCoeffs(fvKeyStreams[i], stcModDown)
 		fvEvaluator.ModSwitchMany(fvKeyStreams[i], fvKeyStreams[i], fvKeyStreams[i].Level())
 	}
-	logger.PrintRunningTime("Time to evaluate the keystreams and do SlotToCoeffs", t)
+	logger.PrintRunningTime("Time to perform linear transformation SlotToCoeffs^{FV} to produce Z", t)
 
-	logger.PrintMessage("[Server - Online] Scale up the symmetric ciphertext into FV-ciphretext space (produce C)")
+	logger.PrintHeader("[Server - Online] Scale up the symmetric ciphertext (Scale{FV}) into FV-ciphretext space (produce C)")
 	t = time.Now()
 	plaintexts = make([]*RtF.Plaintext, outputSize)
 	for s := 0; s < outputSize; s++ {
@@ -228,8 +218,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	logger.PrintRunningTime("Time to scale up the symmetric ciphertext into FV-ciphertext space", t)
 
 	var ctBoot *RtF.Ciphertext
-	outputSize = 2 // for testing, this is the FC1 in this case divided into two ciphertexts
-	logger.PrintHeader("[Server - Online] Transciphering the symmetric ciphertext into CKKS ciphertext")
+	logger.PrintHeader("[Server - Online] Transciphering the symmetric ciphertext into CKKS ciphertext (produce M)")
 	for s := 0; s < outputSize; s++ {
 		// Encrypt and mod switch to the lowest level
 		ciphertext := RtF.NewCiphertextFVLvl(params, 1, 0)
@@ -492,7 +481,6 @@ func SymmetricKeyGen(
 	}
 
 	// Generate new symmetric key
-	logger.PrintHeader("[Client - Initialization] Symmetric Key Generation")
 	t := time.Now()
 	key = make([]uint64, blockSize)
 	for i := 0; i < blockSize; i++ {
@@ -508,7 +496,7 @@ func SymmetricKeyGen(
 	logger.PrintFormatted("Symmetric key saved to %s", symKeyPath)
 
 	// Compute FV Ciphertext of the symmetric key
-	logger.PrintHeader("[Client - Initialization] Compute FV Ciphertext of the Symmetric Key")
+	logger.PrintMessage("Compute FV Ciphertext of the Symmetric Key")
 	t = time.Now()
 	kCt = rubato.EncKey(key)
 	logger.PrintRunningTime("Time to compute FV Ciphertext of the Symmetric Key: ", t)
