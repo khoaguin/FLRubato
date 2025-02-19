@@ -48,8 +48,14 @@ install-syftbox-dev:
 run:
     go run src/main.go
 
+
+[group('hhe')]
+run-hhe:
+    go run src/hhe_fedavg/hhe_fedavg.go
+
 # ---------------------------------------------------------------------------------------------------------------------
 [group('test')]
 test:
     cd Rubato-server/ckks_fv
     go test -timeout=0s -bench=BenchmarkRtFRubato
+
