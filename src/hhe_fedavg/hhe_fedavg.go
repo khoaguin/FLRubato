@@ -55,21 +55,65 @@ import (
 		|-> the heavy computation for transciphering.
 */
 //================= The End xD =================//
-func main() {
+func RunRubato() {
 	logger := utils.NewLogger(utils.DEBUG)
-	root := FLRubato.FindRootPath()
+	rootPath := FLRubato.FindRootPath()
 
-	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON (after training in python)")
+	// TODO: split this into RunFLClient and RunFLAggregator
 	mws := make([]utils.ModelWeights, 3)
-	mws[0] = utils.OpenModelWeights(logger, root, "mnist_weights_exclude_137.json")
-	mws[1] = utils.OpenModelWeights(logger, root, "mnist_weights_exclude_258.json")
-	mws[2] = utils.OpenModelWeights(logger, root, "mnist_weights_exclude_469.json")
+	mws[0] = utils.OpenModelWeights(logger, rootPath, "mnist_weights_exclude_137.json")
+	mws[1] = utils.OpenModelWeights(logger, rootPath, "mnist_weights_exclude_258.json")
+	mws[2] = utils.OpenModelWeights(logger, rootPath, "mnist_weights_exclude_469.json")
 
 	for _, mw := range mws {
 		mw.Print2DLayerDimension(logger)
 	}
+	Rubato(logger, rootPath, RtF.RUBATO128L, mws, true) // Always use fullCoffs = true
+}
 
-	Rubato(logger, root, RtF.RUBATO128L, mws, true) // Always use fullCoffs = true
+func RunFLHHE() {
+	// [WIP] Split this into RunFLClient and RunFLAggregator
+	logger := utils.NewLogger(utils.DEBUG)
+	rootPath := FLRubato.FindRootPath()
+
+	RunKeysDealer(logger, rootPath, RtF.RUBATO128L)
+	// 	for round := 0; round < 1; round++ {
+	// 		RunFLClient(logger, rootPath, "mnist_weights_exclude_137.json")
+	// 		RunFLClient(logger, rootPath, "mnist_weights_exclude_258.json")
+	// 		RunFLClient(logger, rootPath, "mnist_weights_exclude_469.json")
+	//		RunFLAggregator()
+	//	}
+}
+
+func main() {
+	RunRubato()
+	// RunFLHHE()
+}
+
+func RunKeysDealer(logger utils.Logger, rootPath string, paramIndex int) {
+	logger.PrintHeader("Preparing Common things for all FL Clients")
+	logger.PrintFormatted("Root Path: %s", rootPath)
+	logger.PrintFormatted("Parameter Index: %d", paramIndex)
+}
+
+func RunFLClient(
+	logger utils.Logger,
+	rootPath string,
+	weightPath string,
+	// params *RtF.Parameters,
+	// fullCoffs bool,
+) {
+	logger.PrintHeader("FLRubato Client 01")
+	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON (after training in python)")
+	modelWeights := utils.OpenModelWeights(logger, rootPath, weightPath)
+	modelWeights.Print2DLayerDimension(logger)
+
+	logger.PrintHeader("[Client] Preparing the data")
+	// data := preparingData(logger, 3, params, modelWeights)
+
+}
+
+func RunFLAggregator() {
 
 }
 
@@ -137,9 +181,8 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	// Rubato instance
 	rubato := RtF.NewMFVRubato(paramIndex, params, fvEncoder, fvEncryptor, fvEvaluator, rubatoModDown[0])
 
-	var data [][]float64
 	logger.PrintHeader("[Client] Preparing the data")
-	data = preparingData(logger, outputSize, params, mws[0])
+	data := preparingData(logger, outputSize, params, mws[0])
 
 	// Allocating the coefficients
 	coefficients := make([][]float64, outputSize)
@@ -196,7 +239,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	var fvKeyStreams []*RtF.Ciphertext
 	//fvKeyStreams = rubato.Crypt(nonces, counter, kCt, rubatoModDown)
-	logger.PrintHeader("[Server - Offline] Evaluates the keystreams (Eval^{FV} to produce V")
+	logger.PrintHeader("[Server - Offline] Evaluates the keystreams (Eval^{FV}) to produce V")
 	t := time.Now()
 	fvKeyStreams = rubato.CryptNoModSwitch(nonces, counter, kCt) // Compute ciphertexts without modulus switching
 	logger.PrintRunningTime("Time to evaluate the keystreams (Eval^{FV}) to produce V", t)

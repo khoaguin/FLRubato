@@ -4,7 +4,7 @@ const Configs = "configs/"
 const MNIST = "weights/mnist/"
 
 // Keys all the required keys to be stored
-const Keys = "keys/"
+const Keys = "keys/keys128L/"
 const SecretKey = "sk.bin"
 const PublicKey = "pk.bin"
 const StCDiagMatrix = "stcdm.bin"
