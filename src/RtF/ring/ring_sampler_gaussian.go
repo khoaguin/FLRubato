@@ -2,9 +2,10 @@ package ring
 
 import (
 	"encoding/binary"
-	"flhhe/utils"
-	"github.com/tuneinsight/lattigo/v6/utils/sampling"
+	"flhhe/src/utils"
 	"math"
+
+	"github.com/tuneinsight/lattigo/v6/utils/sampling"
 )
 
 // GaussianSampler keeps the state of a truncated Gaussian polynomial sampler.

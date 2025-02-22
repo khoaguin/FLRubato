@@ -5,7 +5,8 @@
 package RtF
 
 import (
-	"flhhe/utils"
+	"flhhe/src/utils"
+
 	"github.com/tuneinsight/lattigo/v6/ring"
 	"github.com/tuneinsight/lattigo/v6/utils/structs"
 )

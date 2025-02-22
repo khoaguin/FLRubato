@@ -2,12 +2,13 @@ package RtF
 
 import (
 	"flhhe/src/RtF/ring"
-	"flhhe/utils"
-	ltgo "github.com/tuneinsight/lattigo/v6/ring"
+	"flhhe/src/utils"
 	"io"
 	"math"
 	"math/big"
 	"math/bits"
+
+	ltgo "github.com/tuneinsight/lattigo/v6/ring"
 )
 
 // SampleZqx Returns uniform random value in (0,q) by rejection sampling

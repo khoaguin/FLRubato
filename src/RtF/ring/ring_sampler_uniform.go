@@ -2,7 +2,8 @@ package ring
 
 import (
 	"encoding/binary"
-	"flhhe/utils"
+	"flhhe/src/utils"
+
 	"github.com/tuneinsight/lattigo/v6/utils/sampling"
 )
 

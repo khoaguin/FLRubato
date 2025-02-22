@@ -2,7 +2,7 @@ package RtF
 
 import (
 	"flhhe/src/RtF/ring"
-	"flhhe/utils"
+	"flhhe/src/utils"
 )
 
 // RotateHoisted takes an input Ciphertext and a list of rotations and returns a map of Ciphertext, where each element of the map is the input Ciphertext

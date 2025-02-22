@@ -2,7 +2,8 @@ package RtF
 
 import (
 	"flhhe/src/RtF/ring"
-	"flhhe/utils"
+	"flhhe/src/utils"
+
 	"github.com/tuneinsight/lattigo/v6/utils/sampling"
 )
 

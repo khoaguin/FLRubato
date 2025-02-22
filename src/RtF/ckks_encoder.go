@@ -3,10 +3,11 @@
 package RtF
 
 import (
-	"flhhe/utils"
-	"github.com/tuneinsight/lattigo/v6/utils/sampling"
+	"flhhe/src/utils"
 	"math"
 	"math/big"
+
+	"github.com/tuneinsight/lattigo/v6/utils/sampling"
 
 	"flhhe/src/RtF/ring"
 )

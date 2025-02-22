@@ -3,10 +3,6 @@ package main
 import (
 	"crypto/rand"
 	"encoding/binary"
-	FLRubato "flhhe"
-	"flhhe/configs"
-	"flhhe/src/RtF"
-	"flhhe/utils"
 	"fmt"
 	"log"
 	"math"
@@ -14,6 +10,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	FLRubato "flhhe"
+	"flhhe/configs"
+	"flhhe/src/RtF"
+	"flhhe/src/utils"
 )
 
 //================= How Rubato Works: =================//
@@ -122,10 +123,6 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 		params.SetLogFVSlots(params.LogSlots())
 	}
 
-	var data [][]float64
-	logger.PrintHeader("[Client] Preparing the data")
-	data = preparingData(logger, outputSize, params, mws[0])
-
 	logger.PrintHeader("[Client - Initialization] HHE keys generation")
 	HHEKeysGen(logger, keysDir, params, halfBsParams, fullCoffs)
 
@@ -137,14 +134,18 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 		halfBsParams,
 	)
 
+	// Rubato instance
+	rubato := RtF.NewMFVRubato(paramIndex, params, fvEncoder, fvEncryptor, fvEvaluator, rubatoModDown[0])
+
+	var data [][]float64
+	logger.PrintHeader("[Client] Preparing the data")
+	data = preparingData(logger, outputSize, params, mws[0])
+
 	// Allocating the coefficients
 	coefficients := make([][]float64, outputSize)
 	for s := 0; s < outputSize; s++ {
 		coefficients[s] = make([]float64, params.N())
 	}
-
-	// Rubato instance
-	rubato := RtF.NewMFVRubato(paramIndex, params, fvEncoder, fvEncryptor, fvEvaluator, rubatoModDown[0])
 
 	logger.PrintHeader("[Client - Initialization] Symmetric Key Generation and Encryption")
 	key, kCt, err := SymmetricKeyGen(logger, keysDir, blockSize, params, rubato)
@@ -438,7 +439,8 @@ func HHEKeysGen(
 	utils.HandleError(err)
 }
 
-// SymmetricKeyGen generates a symmetric key and its corresponding FV ciphertext.
+// SymmetricKeyGen generates a symmetric key and its corresponding FV ciphertext
+// If the key and ciphertext already exist in storage, it loads and returns them.
 func SymmetricKeyGen(
 	logger utils.Logger,
 	keysDir string,

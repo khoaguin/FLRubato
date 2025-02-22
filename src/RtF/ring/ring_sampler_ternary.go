@@ -1,10 +1,11 @@
 package ring
 
 import (
-	"flhhe/utils"
-	"github.com/tuneinsight/lattigo/v6/utils/sampling"
+	"flhhe/src/utils"
 	"math"
 	"math/bits"
+
+	"github.com/tuneinsight/lattigo/v6/utils/sampling"
 )
 
 // TernarySampler keeps the state of a polynomial sampler in the ternary distribution.

@@ -2,7 +2,7 @@ package RtF
 
 import (
 	"flhhe/src/RtF/ring"
-	"flhhe/utils"
+	"flhhe/src/utils"
 )
 
 // CKKSDecryptor is an interface for decrypting Ciphertexts. A Decryptor stores the secret-key.

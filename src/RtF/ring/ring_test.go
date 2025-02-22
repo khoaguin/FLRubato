@@ -2,11 +2,12 @@ package ring
 
 import (
 	"flag"
-	"flhhe/utils"
+	"flhhe/src/utils"
 	"fmt"
-	"github.com/tuneinsight/lattigo/v6/utils/sampling"
 	"math/big"
 	"testing"
+
+	"github.com/tuneinsight/lattigo/v6/utils/sampling"
 
 	"github.com/stretchr/testify/require"
 )

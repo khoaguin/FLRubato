@@ -2,7 +2,7 @@ package RtF
 
 import (
 	"flhhe/src/RtF/bettersine"
-	"flhhe/utils"
+	"flhhe/src/utils"
 	"fmt"
 	"math"
 	"math/cmplx"

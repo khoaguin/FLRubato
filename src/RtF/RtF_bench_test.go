@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"flhhe/utils"
+	"flhhe/src/utils"
 )
 
 // Benchmark RtF framework with HERA for 80-bit security full-slots parameter
