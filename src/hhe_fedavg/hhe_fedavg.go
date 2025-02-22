@@ -91,7 +91,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	logger.PrintHeader("[Client - Initialization] HHE parameters")
 	blockSize := RtF.RubatoParams[paramIndex].Blocksize
 	// outputSize := blockSize - 4
-	outputSize := len(mws) // len(mws)
+	outputSize := 3
 	numRound := RtF.RubatoParams[paramIndex].NumRound
 	plainModulus := RtF.RubatoParams[paramIndex].PlainModulus
 	sigma := RtF.RubatoParams[paramIndex].Sigma
@@ -117,15 +117,20 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	// NOTE: we should always use fullCoffs=true for now
 	if fullCoffs {
 		params.SetLogFVSlots(params.LogN())
+		logger.PrintFormatted("params.N() = %d", params.N())
 	} else {
 		params.SetLogFVSlots(params.LogSlots())
 	}
 
+	var data [][]float64
+	logger.PrintHeader("[Client] Preparing the data")
+	data = preparingData(logger, outputSize, params, mws[0])
+
 	logger.PrintHeader("[Client - Initialization] HHE keys generation")
-	HHEKeyGen(logger, keysDir, params, halfBsParams, fullCoffs)
+	HHEKeysGen(logger, keysDir, params, halfBsParams, fullCoffs)
 
 	// reading the already generated keys from a previous step, it will save time and memory :)
-	fvEncoder, ckksEncoder, fvEncryptor, ckksDecryptor, halfBootstrapper, fvEvaluator = Setup(
+	fvEncoder, ckksEncoder, fvEncryptor, ckksDecryptor, halfBootstrapper, fvEvaluator = InitHHEScheme(
 		logger,
 		keysDir,
 		params,
@@ -147,14 +152,9 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 		log.Fatalf("Failed to generate symmetric key: %v", err)
 	}
 
-	var data [][]float64
 	var nonces [][]byte
 	var counter []byte
 	var keystream [][]uint64
-
-	logger.PrintHeader("[Client] Preparing the data")
-	logger.PrintFormatted("params.N() = %d", params.N())
-	data = preparingData(logger, outputSize, params, mws)
 
 	logger.PrintHeader("[Client - Offline] Generating the nonces and counter")
 	nonces = make([][]byte, params.N())
@@ -256,16 +256,16 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	}
 }
 
-func preparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, mws []utils.ModelWeights) [][]float64 {
+func preparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, mw utils.ModelWeights) [][]float64 {
 	data := make([][]float64, outputSize)
 
 	logger.PrintFormatted("The data structure is [%d][%d] ([outputSize][params.N()])", outputSize, params.N())
 	logger.PrintFormatted("We have the flatten weights as [%d] (for FC1) and [%d] (for FC2)",
-		len(mws[0].FC1Flatten), len(mws[0].FC2Flatten))
+		len(mw.FC1Flatten), len(mw.FC2Flatten))
 
 	cnt := 0 // will use this counter for locating
 	// basically for each flattened FCx we will take as much full ciphertext space as it needs,
-	// for example, here, for 128L sec, the output size is 60, so we have 60* ciphers each with
+	// for example, here, for 128L security, the output size is 60, so we have 60* ciphers each with
 	// 65536 elements. The FC1 has 100352 elements; therefore, we need 2 full ciphertext spaces to
 	// put it there. Of course, there will be some free space, which we use padding and 0 value.
 	// The data will be like:
@@ -277,56 +277,55 @@ func preparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, 
 	// [2][FC2:Padding]
 	//	...
 	// [60][Padding]
-	for _, mw := range mws {
-		// start with FC1
-		cipherPerFC1 := int(math.Ceil(float64(len(mw.FC1Flatten)) / float64(params.N())))
-		paddingLenFC1 := params.N() - (len(mw.FC1Flatten) / cipherPerFC1)
-		fc1Space := params.N() - paddingLenFC1
-		logger.PrintFormatted("Number of ciphers required to store FC1: %d", cipherPerFC1)
-		logger.PrintFormatted("Padding length for each cipher required to store FC1: %d", paddingLenFC1)
-		if cipherPerFC1 > 0 {
-			for i := 0; i < cipherPerFC1; i++ {
-				data[cnt] = make([]float64, params.N())
-				for j := 0; j < params.N(); j++ {
-					if j < fc1Space {
-						data[cnt][j] = mw.FC1Flatten[(i*fc1Space)+j]
-					} else {
-						data[cnt][j] = float64(0) // for padding
-					}
-				}
-				cnt++ // moving to the next plaintext slot (row)
-			}
-		} else {
-			log.Fatalln("Something is wrong with the input data length!")
-		}
 
-		logger.PrintMessages("FC1 data space and the padding: ", data[cnt-1][fc1Space-4:fc1Space+4])
-		// then FC2
-		cipherPerFC2 := int(math.Ceil(float64(len(mw.FC2Flatten)) / float64(params.N())))
-		paddingLenFC2 := params.N() - (len(mw.FC2Flatten) / cipherPerFC2)
-		fc2Space := params.N() - paddingLenFC2
-		logger.PrintFormatted("Number of ciphers required to store FC2: %d", cipherPerFC2)
-		logger.PrintFormatted("Padding length required to store FC2: %d", paddingLenFC2)
-		if cipherPerFC2 > 0 {
-			for i := 0; i < cipherPerFC2; i++ {
-				data[cnt] = make([]float64, params.N())
-				for j := 0; j < params.N(); j++ {
-					if j < fc2Space {
-						data[cnt][j] = mw.FC2Flatten[(i*fc2Space)+j]
-					} else {
-						data[cnt][j] = float64(0) // for padding
-					}
+	// start with FC1
+	cipherPerFC1 := int(math.Ceil(float64(len(mw.FC1Flatten)) / float64(params.N()))) // MNIST: 2
+	paddingLenFC1 := params.N() - (len(mw.FC1Flatten) / cipherPerFC1)                 // MNIST: 15360
+	fc1Space := params.N() - paddingLenFC1                                            // MNIST: 50176
+	logger.PrintFormatted("Number of ciphers required to store FC1: %d", cipherPerFC1)
+	logger.PrintFormatted("FC1 Space: %d", fc1Space)
+	logger.PrintFormatted("Padding length for each cipher required to store FC1: %d", paddingLenFC1)
+	if cipherPerFC1 > 0 {
+		for i := 0; i < cipherPerFC1; i++ {
+			data[cnt] = make([]float64, params.N())
+			for j := 0; j < params.N(); j++ {
+				if j < fc1Space {
+					data[cnt][j] = mw.FC1Flatten[(i*fc1Space)+j]
+				} else {
+					data[cnt][j] = float64(0) // for padding
 				}
-				cnt++ // moving to the next plaintext slot (row)
 			}
-			if cnt == outputSize {
-				break
-			}
-		} else {
-			log.Fatalln("Something is wrong with the input data length!")
+			cnt++ // moving to the next plaintext slot (row)
 		}
-		logger.PrintMessages("FC2 data space and the padding: ", data[cnt-1][fc2Space-4:fc2Space+4])
+	} else {
+		log.Fatalln("Something is wrong with the input data length!")
 	}
+
+	logger.PrintMessages("FC1 data space and the padding: ", data[cnt-1][fc1Space-4:fc1Space+4])
+
+	// then FC2
+	cipherPerFC2 := int(math.Ceil(float64(len(mw.FC2Flatten)) / float64(params.N())))
+	paddingLenFC2 := params.N() - (len(mw.FC2Flatten) / cipherPerFC2)
+	fc2Space := params.N() - paddingLenFC2
+	logger.PrintFormatted("Number of ciphers required to store FC2: %d", cipherPerFC2)
+	logger.PrintFormatted("FC2 Space: %d", fc2Space)
+	logger.PrintFormatted("Padding length required to store FC2: %d", paddingLenFC2)
+	if cipherPerFC2 > 0 {
+		for i := 0; i < cipherPerFC2; i++ {
+			data[cnt] = make([]float64, params.N())
+			for j := 0; j < params.N(); j++ {
+				if j < fc2Space {
+					data[cnt][j] = mw.FC2Flatten[(i*fc2Space)+j]
+				} else {
+					data[cnt][j] = float64(0) // for padding
+				}
+			}
+			cnt++ // moving to the next plaintext slot (row)
+		}
+	} else {
+		log.Fatalln("Something is wrong with the input data length!")
+	}
+	logger.PrintMessages("FC2 data space and the padding: ", data[cnt-1][fc2Space-4:fc2Space+4])
 
 	// filling the rest with padding (this is not efficient at all) -> the solution will be changing the parameters
 	// for s := cnt; s < outputSize; s++ {
@@ -367,7 +366,7 @@ func LoadCipher(
 }
 
 // Generates and saves cryptographic keys for Homomorphic Hybrid Encryption (HHE).
-func HHEKeyGen(
+func HHEKeysGen(
 	logger utils.Logger,
 	keysDir string,
 	params *RtF.Parameters,
@@ -470,12 +469,14 @@ func SymmetricKeyGen(
 			return nil, nil, fmt.Errorf("failed to load symmetric key: %v", err)
 		}
 
+		t := time.Now()
 		// Load ciphertext array kCt
 		kCt, err := LoadCiphertextArray(symCipherDir, params)
 		if err != nil {
 			fmt.Printf("Failed to load ciphertext array: %v\n", err)
 			return nil, nil, fmt.Errorf("failed to load FV ciphertext symmetric key: %v", err)
 		}
+		logger.PrintRunningTime("Time to load the symmetric key FV ciphertext", t)
 
 		return key, kCt, nil
 	}
@@ -511,7 +512,10 @@ func SymmetricKeyGen(
 	return key, kCt, nil
 }
 
-func Setup(
+// InitHHEScheme loads the homomorphic hybrid encryption keys from storage and initializes
+// the complete cryptographic scheme including encoders, encryptors, decryptors, evaluators,
+// and the half-bootstrapping components. It returns all necessary components for HHE operations.
+func InitHHEScheme(
 	logger utils.Logger,
 	keysDir string,
 	params *RtF.Parameters,
