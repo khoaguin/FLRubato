@@ -10,10 +10,6 @@ import (
 	"testing"
 )
 
-func TestRubato(t *testing.T) {
-
-}
-
 func TestLoadCipher(t *testing.T) {
 	logger := utils.NewLogger(utils.DEBUG)
 	root := FLRubato.FindRootPath()
@@ -41,7 +37,7 @@ func TestLoadCipher(t *testing.T) {
 	logger.PrintFormatted("PtX len: %d, %d", params.Slots(), params.N())
 
 	// reading the already generated keys from a previous step, it will save time and memory :)
-	_, ckksEncoder, _, ckksDecryptor, _, fvEvaluator = Setup(logger, keysDir, params, halfBsParams)
+	_, ckksEncoder, _, ckksDecryptor, _, fvEvaluator = InitHHEScheme(logger, keysDir, params, halfBsParams)
 
 	// wCt ciphertext for weights
 	wCt := LoadCipher(logger, 0, ciphersDir, params)
