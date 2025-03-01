@@ -75,11 +75,11 @@ func RunRubato() {
 	for _, mw := range mws {
 		mw.Print2DLayerDimension(logger)
 	}
-	Rubato(logger, rootPath, RtF.RUBATO80L, mws, true) // Always use fullCoffs = true
+	Rubato(logger, rootPath, RtF.RUBATO80L, mws)
 }
 
 func RunFLHHE() {
-	// [WIP] Split this into RunFLClient and RunFLAggregator
+	// [WIP] Split this into RunFLClient and RunFLServer
 	logger := utils.NewLogger(utils.DEBUG)
 	rootPath := FLRubato.FindRootPath()
 
@@ -98,7 +98,7 @@ func RunFLHHE() {
 }
 
 // Rubato is the one
-func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelWeights, fullCoffs bool) {
+func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelWeights) {
 	keysDir := filepath.Join(root, configs.Keys)
 	ciphersDir := filepath.Join(root, configs.Ciphertexts)
 
@@ -138,14 +138,8 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	rubatoModDown := RtF.RubatoModDownParams[paramIndex].CipherModDown
 	stcModDown := RtF.RubatoModDownParams[paramIndex].StCModDown
 
-	// fullCoffs denotes whether full coefficients are used for data encoding
-	// NOTE: we should always use fullCoffs=true for now
-	if fullCoffs {
-		params.SetLogFVSlots(params.LogN())
-		logger.PrintFormatted("params.N() = %d", params.N())
-	} else {
-		params.SetLogFVSlots(params.LogSlots())
-	}
+	params.SetLogFVSlots(params.LogN())
+	logger.PrintFormatted("params.N() = %d", params.N())
 
 	keys_dealer.HHEKeysGen(logger, keysDir, params, halfBsParams)
 
@@ -256,14 +250,10 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 		// The difference from the bootstrapping is that the last StC is missing.
 		// CAUTION: the scale of the ciphertext MUST be equal (or very close) to params.Scale
 		// To equalize the scale, the function evaluator.SetScale(ciphertext, parameters.Scale) can be used at the expense of one level.
-		if fullCoffs {
-			logger.PrintMessage("Halfboot X and outputs a CKKS-ciphertext M containing the CKKS encrypted messages in its slots")
-			t = time.Now()
-			ctBoot, _ = halfBootstrapper.HalfBoot(ciphertext, false)
-			logger.PrintRunningTime("HalfBoot", t)
-		} else {
-			ctBoot, _ = halfBootstrapper.HalfBoot(ciphertext, true)
-		}
+		logger.PrintMessage("Halfboot X and outputs a CKKS-ciphertext M containing the CKKS encrypted messages in its slots")
+		t = time.Now()
+		ctBoot, _ = halfBootstrapper.HalfBoot(ciphertext, false)
+		logger.PrintRunningTime("HalfBoot", t)
 
 		valuesWant := make([]complex128, params.Slots())
 		for i := 0; i < params.Slots(); i++ {
