@@ -2,6 +2,7 @@ package client
 
 import (
 	"flhhe/src/RtF"
+	"flhhe/src/hhe_fedavg/keys_dealer"
 	"flhhe/src/utils"
 	"log"
 	"math"
@@ -21,6 +22,10 @@ func RunFLClient(
 	logger.PrintHeader("[Client] Preparing the data")
 	var data [][]float64 = PreparingData(logger, 3, params, modelWeights)
 	logger.PrintFormatted("Data.shape = [%d][%d]", len(data), len(data[0]))
+
+	logger.PrintHeader("[Client] Load symmetric key")
+	// Load symmetric key
+	key, err := keys_dealer.LoadSymmKey(symKeyPath, blockSize)
 }
 
 func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, mw utils.ModelWeights) [][]float64 {
