@@ -92,7 +92,7 @@ func RunFLHHE() {
 	logger.PrintFormatted("FV Encrypted Symmetric Key: %+v", symKeyFVCiphertext)
 
 	for round := 0; round < 1; round++ {
-		client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_137.json")
+		client.RunFLClient(logger, rootPath, rubatoParams, "mnist_weights_exclude_137.json")
 		// client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_258.json")
 		// client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_469.json")
 		server.RunFLServer(logger, rootPath)

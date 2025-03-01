@@ -1,27 +1,82 @@
 package client
 
 import (
-	"flhhe/src/RtF"
-	"flhhe/src/utils"
+	"crypto/rand"
 	"log"
 	"math"
+	"path/filepath"
+
+	"flhhe/configs"
+	"flhhe/src/RtF"
+	"flhhe/src/hhe_fedavg/keys_dealer"
+	"flhhe/src/utils"
 )
 
 func RunFLClient(
 	logger utils.Logger,
 	rootPath string,
-	params *RtF.Parameters,
+	params *keys_dealer.RubatoParams,
 	weightPath string,
 ) {
 	logger.PrintHeader("--- Client ---")
 	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON")
+	
+	keysDir := filepath.Join(rootPath, configs.Keys)
+	
 	modelWeights := utils.OpenModelWeights(logger, rootPath, weightPath)
 	modelWeights.Print2DLayerDimension(logger)
 
 	logger.PrintHeader("[Client] Preparing the data")
-	var data [][]float64 = PreparingData(logger, 3, params, modelWeights)
+	var data [][]float64 = PreparingData(logger, 3, params.Params, modelWeights)
 	logger.PrintFormatted("Data.shape = [%d][%d]", len(data), len(data[0]))
-	
+
+
+	logger.PrintHeader("[Client - Offline] Generating the nonces and counter")
+	nonces := make([][]byte, params.Params.N())
+	for i := 0; i < params.Params.N(); i++ {
+		nonces[i] = make([]byte, 64)
+		rand.Read(nonces[i])
+	}
+	logger.PrintFormatted("Nonces diminsion: [%d][%d]", len(nonces), len(nonces[0]))
+	counter := make([]byte, 64)
+	rand.Read(counter)
+	logger.PrintFormatted("Counter diminsion: [%d]", len(counter))
+
+	logger.PrintHeader("[Client - Offline] Loading the symmetric key")
+	symKeyPath := filepath.Join(keysDir, configs.SymmetricKey)
+	symKey := keys_dealer.LoadSymmKey(symKeyPath, params.Blocksize)
+
+	logger.PrintHeader("[Client - Offline] Generating the keystream z")
+	keystream := make([][]uint64, params.Params.N())
+	for i := range params.Params.N() {
+		keystream[i] = RtF.PlainRubato(
+			params.Blocksize, 
+			params.NumRound, 
+			nonces[i], 
+			counter, 
+			symKey, 
+			params.Params.PlainModulus(), 
+			params.Sigma)
+	}
+
+	// for s := 0; s < outputSize; s++ {
+	// 	for i := 0; i < params.N()/2; i++ {
+	// 		j := utils.BitReverse64(uint64(i), uint64(params.Params.LogN()-1))
+	// 		coefficients[s][j] = data[s][i]
+	// 		coefficients[s][j+uint64(params.Params.N()/2)] = data[s][i+params.Params.N()/2]
+	// 	}
+	// }
+
+	// logger.PrintHeader("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
+	// plainCKKSRingTs = make([]*RtF.PlaintextRingT, outputSize)
+	// for s := 0; s < outputSize; s++ {
+	// 	plainCKKSRingTs[s] = ckksEncoder.EncodeCoeffsRingTNew(coefficients[s], messageScaling) // scales up the plaintext message
+	// 	poly := plainCKKSRingTs[s].Value()[0]
+	// 	for i := 0; i < params.N(); i++ {
+	// 		j := utils.BitReverse64(uint64(i), uint64(params.LogN()))
+	// 		poly.Coeffs[0][j] = (poly.Coeffs[0][j] + keystream[i][s]) % params.PlainModulus() // modulo q addition between the keystream to the scaled message
+	// 	}
+	// }
 }
 
 func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, mw utils.ModelWeights) [][]float64 {

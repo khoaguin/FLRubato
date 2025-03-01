@@ -284,19 +284,11 @@ func SymmetricKeyGen(
 		logger.PrintMessage("Loading existing symmetric key and ciphertext")
 
 		// Load symmetric key
-		key, err := LoadSymmKey(symKeyPath, blockSize)
-		if err != nil {
-			fmt.Printf("Failed to load key: %v\n", err)
-			return nil, nil, fmt.Errorf("failed to load symmetric key: %v", err)
-		}
+		key := LoadSymmKey(symKeyPath, blockSize)
 
 		t := time.Now()
 		// Load ciphertext array kCt
-		kCt, err := LoadCiphertextArray(symCipherDir, params)
-		if err != nil {
-			fmt.Printf("Failed to load ciphertext array: %v\n", err)
-			return nil, nil, fmt.Errorf("failed to load FV ciphertext symmetric key: %v", err)
-		}
+		kCt := LoadCiphertextArray(symCipherDir, params)
 		logger.PrintRunningTime("Time to load the symmetric key FV ciphertext", t)
 
 		return key, kCt, nil
@@ -335,17 +327,17 @@ func SymmetricKeyGen(
 
 // LoadCiphertextArray loads an array of ciphertexts from a directory
 // params is needed to create new ciphertext objects
-func LoadCiphertextArray(dirPath string, params *RtF.Parameters) ([]*RtF.Ciphertext, error) {
+func LoadCiphertextArray(dirPath string, params *RtF.Parameters) []*RtF.Ciphertext {
 	// Read length file
 	lengthPath := filepath.Join(dirPath, "length.txt")
 	lengthBytes, err := os.ReadFile(lengthPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read length file: %v", err)
+		panic(fmt.Errorf("failed to read length file: %v", err))
 	}
 
 	length, err := strconv.Atoi(string(lengthBytes))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse length: %v", err)
+		panic(fmt.Errorf("failed to parse length: %v", err))
 	}
 
 	// Create array to hold ciphertexts
@@ -361,21 +353,21 @@ func LoadCiphertextArray(dirPath string, params *RtF.Parameters) ([]*RtF.Ciphert
 
 		// Deserialize into it
 		if err := utils.Deserialize(ct, filePath); err != nil {
-			return nil, fmt.Errorf("failed to load ciphertext %d: %v", i, err)
+			panic(fmt.Errorf("failed to load ciphertext %d: %v", i, err))
 		}
 
 		ciphertexts[i] = ct
 	}
 
-	return ciphertexts, nil
+	return ciphertexts
 }
 
 // LoadKey loads a sequential key array from a file
-func LoadSymmKey(filePath string, blockSize int) ([]uint64, error) {
+func LoadSymmKey(filePath string, blockSize int) []uint64 {
 	// Open the file
 	file, err := os.Open(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %v", err)
+		panic(fmt.Errorf("failed to open file: %v", err))
 	}
 	defer file.Close()
 
@@ -385,11 +377,11 @@ func LoadSymmKey(filePath string, blockSize int) ([]uint64, error) {
 	// Read each uint64 value
 	for i := 0; i < blockSize; i++ {
 		if err := binary.Read(file, binary.LittleEndian, &key[i]); err != nil {
-			return nil, fmt.Errorf("failed to read key at position %d: %v", i, err)
+			panic(fmt.Errorf("failed to read key at position %d: %v", i, err))
 		}
 	}
 
-	return key, nil
+	return key
 }
 
 // SaveCiphertextArray saves an array of ciphertexts to individual files in a directory
