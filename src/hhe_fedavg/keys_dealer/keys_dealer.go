@@ -1,3 +1,6 @@
+/// The keys dealer is responsible for generating the Rubato parameters, HHE keys,
+/// symmetric keys and their corresponding FV ciphertexts
+
 package keys_dealer
 
 import (
@@ -38,7 +41,7 @@ func RunKeysDealer(
 	logger utils.Logger,
 	rootPath string,
 	paramIndex int) (*RubatoParams, *HHEComponents, *RtF.MFVRubato) {
-
+	logger.PrintHeader("--- Keys Dealer ---")
 	logger.PrintHeader("[Keys Dealer] Preparing Common things for all FL Clients")
 	logger.PrintFormatted("Root Path: %s", rootPath)
 	logger.PrintFormatted("Parameter Index: %d", paramIndex)
