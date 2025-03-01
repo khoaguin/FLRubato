@@ -40,7 +40,7 @@ type HHEComponents struct {
 func RunKeysDealer(
 	logger utils.Logger,
 	rootPath string,
-	paramIndex int) (*RubatoParams, *HHEComponents, *RtF.MFVRubato) {
+	paramIndex int) (*RubatoParams, *HHEComponents, []uint64, []*RtF.Ciphertext, *RtF.MFVRubato) {
 	logger.PrintHeader("--- Keys Dealer ---")
 	logger.PrintHeader("[Keys Dealer] Preparing Common things for all FL Clients")
 	logger.PrintFormatted("Root Path: %s", rootPath)
@@ -66,8 +66,14 @@ func RunKeysDealer(
 		hheComponents.FvEvaluator,
 		rubatoParams.RubatoModDown[0],
 	)
+	symKey, symKeyFVCiphertext, err := SymmetricKeyGen(
+		logger, keysDir, rubatoParams.Blocksize, rubatoParams.Params, rubato,
+	)
+	if err != nil {
+		utils.HandleError(err)
+	}
 
-	return rubatoParams, hheComponents, &rubato
+	return rubatoParams, hheComponents, symKey, symKeyFVCiphertext, &rubato
 }
 
 func InitRubatoParams(logger utils.Logger, paramIndex int) *RubatoParams {

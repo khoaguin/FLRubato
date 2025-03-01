@@ -59,7 +59,7 @@ import (
 //================= The End xD =================//
 
 func main() {
-	RunRubato()
+	// RunRubato()
 	RunFLHHE()
 }
 
@@ -82,12 +82,14 @@ func RunFLHHE() {
 	// [WIP] Split this into RunFLClient and RunFLServer
 	logger := utils.NewLogger(utils.DEBUG)
 	rootPath := FLRubato.FindRootPath()
-
 	paramIndex := RtF.RUBATO128L
-	rubatoParams := keys_dealer.InitRubatoParams(logger, paramIndex)
+
+	rubatoParams, hheComponents, symKey, symKeyFVCiphertext, rubato := keys_dealer.RunKeysDealer(logger, rootPath, paramIndex)
 	logger.PrintFormatted("Rubato Parameters: %+v", rubatoParams)
-	// logger.PrintFormatted("HHE Components: %+v", hheComponents)
-	// logger.PrintFormatted("Rubato Instance: %+v", rubato)
+	logger.PrintFormatted("HHE Components: %+v", hheComponents)
+	logger.PrintFormatted("Rubato Instance: %+v", rubato)
+	logger.PrintFormatted("Symmetric Key: %+v", symKey)
+	logger.PrintFormatted("FV Encrypted Symmetric Key: %+v", symKeyFVCiphertext)
 
 	for round := 0; round < 1; round++ {
 		client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_137.json")
