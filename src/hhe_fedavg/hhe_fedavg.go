@@ -59,7 +59,7 @@ import (
 //================= The End xD =================//
 
 func main() {
-	// RunRubato()
+	RunRubato()
 	RunFLHHE()
 }
 
@@ -95,10 +95,6 @@ func RunFLHHE() {
 		// client.RunFLClient(logger, rootPath, "mnist_weights_exclude_469.json")
 		server.RunFLServer(logger, rootPath)
 	}
-}
-
-func RunFLAggregator() {
-
 }
 
 // Rubato is the one

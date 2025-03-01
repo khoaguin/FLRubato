@@ -26,8 +26,8 @@ func RunFLClient(
 func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, mw utils.ModelWeights) [][]float64 {
 	data := make([][]float64, outputSize)
 
-	logger.PrintFormatted("The data structure is [%dd] ([outputSize][params.N()])", outputSize, params.N())
-	logger.PrintFormatted("We have the flatten weights as [][%%d] (for FC1) and [%d] (for FC2)",
+	logger.PrintFormatted("The data structure is [%d][%d] ([outputSize][params.N()])", outputSize, params.N())
+	logger.PrintFormatted("We have the flatten weights as [%d] (for FC1) and [%d] (for FC2)",
 		len(mw.FC1Flatten), len(mw.FC2Flatten))
 
 	cnt := 0 // will use this counter for locating
