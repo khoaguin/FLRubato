@@ -37,8 +37,8 @@ import (
 		|-> a keystream as ks = [N][BS-4]uint64, (Each element of keystream has 4 columns less than
 		|-> the actual block size, since we drop 4 elements because of the noise addition)
 	6. Symmetric Data Encryption
-		- To encrypt the data using the symmetric keystream, we first move data to the plaintext's
-		|-> coefficients and then use CKKS Encode function to have data as a CKKS polynomial ring.
+		- To encrypt the data using the symmetric keystream, we first move data to the plaintext's coefficients
+		|-> and then use CKKS Encode function to have data as a CKKS polynomial ring.
 		|-> Finally, one can add the keystream to the polynomial coefficients and do the modular reduction.
 	7. Scaling up the data
 		- In this step, we Scale Up the encrypted data, PlaintextRingT (R_p) into a Plaintext (R_q),
@@ -92,7 +92,7 @@ func RunFLHHE() {
 	logger.PrintFormatted("FV Encrypted Symmetric Key: %+v", symKeyFVCiphertext)
 
 	for round := 0; round < 1; round++ {
-		client.RunFLClient(logger, rootPath, rubatoParams, "mnist_weights_exclude_137.json")
+		client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_137.json")
 		// client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_258.json")
 		// client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_469.json")
 		server.RunFLServer(logger, rootPath)

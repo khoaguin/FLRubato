@@ -12,12 +12,20 @@ import (
 	"flhhe/src/utils"
 )
 
+type FLClient struct {
+	Nonces  [][]byte
+	Counter []byte
+	KeyStream [][]uint64
+	PlainCKKSRingTs []*RtF.PlaintextRingT
+}
+
 func RunFLClient(
 	logger utils.Logger,
 	rootPath string,
 	params *keys_dealer.RubatoParams,
+	hheComponents *keys_dealer.HHEComponents,
 	weightPath string,
-) {
+) (*FLClient) {
 	logger.PrintHeader("--- Client ---")
 	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON")
 	
@@ -31,13 +39,15 @@ func RunFLClient(
 	logger.PrintFormatted("Data.shape = [%d][%d]", len(data), len(data[0]))
 
 
-	logger.PrintHeader("[Client - Offline] Generating the nonces and counter")
+	logger.PrintHeader("[Client - Offline] Generating the nonces")
 	nonces := make([][]byte, params.Params.N())
 	for i := 0; i < params.Params.N(); i++ {
 		nonces[i] = make([]byte, 64)
 		rand.Read(nonces[i])
 	}
 	logger.PrintFormatted("Nonces diminsion: [%d][%d]", len(nonces), len(nonces[0]))
+	
+	logger.PrintHeader("[Client - Offline] Generating counter")
 	counter := make([]byte, 64)
 	rand.Read(counter)
 	logger.PrintFormatted("Counter diminsion: [%d]", len(counter))
@@ -50,33 +60,24 @@ func RunFLClient(
 	keystream := make([][]uint64, params.Params.N())
 	for i := range params.Params.N() {
 		keystream[i] = RtF.PlainRubato(
-			params.Blocksize, 
-			params.NumRound, 
-			nonces[i], 
-			counter, 
-			symKey, 
-			params.Params.PlainModulus(), 
+			params.Blocksize,
+			params.NumRound,
+			nonces[i],
+			counter,
+			symKey,
+			params.Params.PlainModulus(),
 			params.Sigma)
 	}
 
-	// for s := 0; s < outputSize; s++ {
-	// 	for i := 0; i < params.N()/2; i++ {
-	// 		j := utils.BitReverse64(uint64(i), uint64(params.Params.LogN()-1))
-	// 		coefficients[s][j] = data[s][i]
-	// 		coefficients[s][j+uint64(params.Params.N()/2)] = data[s][i+params.Params.N()/2]
-	// 	}
-	// }
+	logger.PrintHeader("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
+	PlainCKKSRingTs := EncryptData(logger, params, hheComponents.CkksEncoder, data, keystream)
 
-	// logger.PrintHeader("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
-	// plainCKKSRingTs = make([]*RtF.PlaintextRingT, outputSize)
-	// for s := 0; s < outputSize; s++ {
-	// 	plainCKKSRingTs[s] = ckksEncoder.EncodeCoeffsRingTNew(coefficients[s], messageScaling) // scales up the plaintext message
-	// 	poly := plainCKKSRingTs[s].Value()[0]
-	// 	for i := 0; i < params.N(); i++ {
-	// 		j := utils.BitReverse64(uint64(i), uint64(params.LogN()))
-	// 		poly.Coeffs[0][j] = (poly.Coeffs[0][j] + keystream[i][s]) % params.PlainModulus() // modulo q addition between the keystream to the scaled message
-	// 	}
-	// }
+	return &FLClient{
+		Nonces: nonces,
+		Counter: counter,
+		KeyStream: keystream,
+		PlainCKKSRingTs: PlainCKKSRingTs,
+	} 
 }
 
 func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, mw utils.ModelWeights) [][]float64 {
@@ -158,4 +159,33 @@ func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, 
 	// 	}
 	// }
 	return data
+}
+
+func EncryptData(
+	logger utils.Logger, 
+	params *keys_dealer.RubatoParams,
+	ckksEncoder RtF.CKKSEncoder,
+	data [][]float64,
+	keystream [][]uint64) ([]*RtF.PlaintextRingT) {
+	var plainCKKSRingTs []*RtF.PlaintextRingT
+
+	logger.PrintMemUsage("[Client - Online] Move data to the plaintext's coefficients")
+	coefficients := make([][]float64, params.OutputSize)
+	for s := range params.OutputSize {
+		coefficients[s] = make([]float64, params.Params.N())
+	}
+
+	logger.PrintMessage("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
+	plainCKKSRingTs = make([]*RtF.PlaintextRingT, params.OutputSize)
+	for s := range params.OutputSize {
+		plainCKKSRingTs[s] = ckksEncoder.EncodeCoeffsRingTNew(coefficients[s], params.MessageScaling) // scales up the plaintext message
+		poly := plainCKKSRingTs[s].Value()[0]
+		for i := range params.Params.N() {
+			j := utils.BitReverse64(uint64(i), uint64(params.Params.LogN()))
+			poly.Coeffs[0][j] = (poly.Coeffs[0][j] + keystream[i][s]) % params.Params.PlainModulus() // modulo q addition between the keystream to the scaled message
+		}
+	}
+	logger.PrintFormatted("Symmetric encrypted data: %+v", plainCKKSRingTs)
+
+	return plainCKKSRingTs
 }
