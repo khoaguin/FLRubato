@@ -40,25 +40,29 @@ type HHEComponents struct {
 func RunKeysDealer(
 	logger utils.Logger,
 	rootPath string,
-	paramIndex int) (*RubatoParams, *HHEComponents, []uint64, []*RtF.Ciphertext, *RtF.MFVRubato) {
+	paramIndex int) (
+	rubatoParams *RubatoParams, 
+	hheComponents *HHEComponents, 
+	rubato RtF.MFVRubato,
+	) {
 	logger.PrintHeader("--- Keys Dealer ---")
 	logger.PrintHeader("[Keys Dealer] Preparing Common things for all FL Clients")
 	logger.PrintFormatted("Root Path: %s", rootPath)
 	logger.PrintFormatted("Parameter Index: %d", paramIndex)
 
 	// Initialize Rubato parameters
-	rubatoParams := InitRubatoParams(logger, paramIndex)
+	rubatoParams = InitRubatoParams(logger, paramIndex)
 
 	// Initialize HHE components
 	keysDir := filepath.Join(rootPath, configs.Keys)
 	HHEKeysGen(logger, keysDir, rubatoParams.Params, rubatoParams.HalfBsParams)
 
 	// reading the already generated keys from a previous step, it will save time and memory :)
-	hheComponents := InitHHEScheme(
+	hheComponents = InitHHEScheme(
 		logger, keysDir, rubatoParams.Params, rubatoParams.HalfBsParams,
 	)
 
-	rubato := RtF.NewMFVRubato(
+	rubato = RtF.NewMFVRubato(
 		paramIndex,
 		rubatoParams.Params,
 		hheComponents.FvEncoder,
@@ -66,14 +70,18 @@ func RunKeysDealer(
 		hheComponents.FvEvaluator,
 		rubatoParams.RubatoModDown[0],
 	)
+
+	var err error
 	symKey, symKeyFVCiphertext, err := SymmetricKeyGen(
 		logger, keysDir, rubatoParams.Blocksize, rubatoParams.Params, rubato,
 	)
 	if err != nil {
 		utils.HandleError(err)
 	}
+	logger.PrintFormatted("Symmetric Key: %+v", symKey)
+	logger.PrintFormatted("FV encrypted symmetric key: %+v", symKeyFVCiphertext)
 
-	return rubatoParams, hheComponents, symKey, symKeyFVCiphertext, &rubato
+	return rubatoParams, hheComponents, rubato
 }
 
 func InitRubatoParams(logger utils.Logger, paramIndex int) *RubatoParams {

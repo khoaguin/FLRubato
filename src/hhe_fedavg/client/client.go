@@ -25,19 +25,19 @@ func RunFLClient(
 	params *keys_dealer.RubatoParams,
 	hheComponents *keys_dealer.HHEComponents,
 	weightPath string,
+	clientID string,
 ) (*FLClient) {
 	logger.PrintHeader("--- Client ---")
 	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON")
-	
+
 	keysDir := filepath.Join(rootPath, configs.Keys)
-	
+
 	modelWeights := utils.OpenModelWeights(logger, rootPath, weightPath)
 	modelWeights.Print2DLayerDimension(logger)
 
 	logger.PrintHeader("[Client] Preparing the data")
 	var data [][]float64 = PreparingData(logger, 3, params.Params, modelWeights)
 	logger.PrintFormatted("Data.shape = [%d][%d]", len(data), len(data[0]))
-
 
 	logger.PrintHeader("[Client - Offline] Generating the nonces")
 	nonces := make([][]byte, params.Params.N())
@@ -69,8 +69,13 @@ func RunFLClient(
 			params.Sigma)
 	}
 
+	ciphertextPath := filepath.Join(rootPath, configs.Ciphertexts, clientID, "symm_ciphertext.bin")
 	logger.PrintHeader("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
 	PlainCKKSRingTs := EncryptData(logger, params, hheComponents.CkksEncoder, data, keystream)
+
+
+	logger.PrintFormatted("[Client - Online] Saving the symmetric encrypted data into %s", ciphertextPath)
+	utils.Serialize(PlainCKKSRingTs, ciphertextPath)
 
 	return &FLClient{
 		Nonces: nonces,
@@ -186,6 +191,6 @@ func EncryptData(
 		}
 	}
 	logger.PrintFormatted("Symmetric encrypted data: %+v", plainCKKSRingTs)
-
+	
 	return plainCKKSRingTs
 }

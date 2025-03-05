@@ -84,18 +84,17 @@ func RunFLHHE() {
 	rootPath := FLRubato.FindRootPath()
 	paramIndex := RtF.RUBATO128L
 
-	rubatoParams, hheComponents, symKey, symKeyFVCiphertext, rubato := keys_dealer.RunKeysDealer(logger, rootPath, paramIndex)
+	rubatoParams, hheComponents, rubato := keys_dealer.RunKeysDealer(logger, rootPath, paramIndex)
 	logger.PrintFormatted("Rubato Parameters: %+v", rubatoParams)
 	logger.PrintFormatted("HHE Components: %+v", hheComponents)
-	logger.PrintFormatted("Rubato Instance: %+v", rubato)
-	logger.PrintFormatted("Symmetric Key: %+v", symKey)
-	logger.PrintFormatted("FV Encrypted Symmetric Key: %+v", symKeyFVCiphertext)
+	logger.PrintFormatted("Rubato Instance Addr: %+v", &rubato)
 
+	flClients := make([]*client.FLClient, 3)
 	for round := 0; round < 1; round++ {
-		client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_137.json")
-		// client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_258.json")
-		// client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_469.json")
-		server.RunFLServer(logger, rootPath)
+		flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_137.json", "client1")
+		// flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_258.json")
+		// flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_469.json")
+		server.RunFLServer(logger, rootPath, flClients, rubatoParams, hheComponents, rubato)
 	}
 }
 
