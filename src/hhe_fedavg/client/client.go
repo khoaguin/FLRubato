@@ -41,7 +41,7 @@ func RunFLClient(
 
 	logger.PrintHeader("[Client - Offline] Generating the nonces")
 	nonces := make([][]byte, params.Params.N())
-	for i := 0; i < params.Params.N(); i++ {
+	for i := range params.Params.N() {
 		nonces[i] = make([]byte, 64)
 		rand.Read(nonces[i])
 	}
@@ -115,7 +115,7 @@ func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, 
 	logger.PrintFormatted("FC1 Space: %d", fc1Space)
 	logger.PrintFormatted("Padding length for each cipher required to store FC1: %d", paddingLenFC1)
 	if cipherPerFC1 > 0 {
-		for i := 0; i < cipherPerFC1; i++ {
+		for i := range cipherPerFC1 {
 			data[cnt] = make([]float64, params.N())
 			for j := 0; j < params.N(); j++ {
 				if j < fc1Space {
