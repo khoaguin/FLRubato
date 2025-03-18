@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"log"
 	"math"
+	"os"
 	"path/filepath"
 
 	"flhhe/configs"
@@ -13,9 +14,9 @@ import (
 )
 
 type FLClient struct {
-	Nonces  [][]byte
-	Counter []byte
-	KeyStream [][]uint64
+	Nonces          [][]byte
+	Counter         []byte
+	KeyStream       [][]uint64
 	PlainCKKSRingTs []*RtF.PlaintextRingT
 }
 
@@ -26,7 +27,7 @@ func RunFLClient(
 	hheComponents *keys_dealer.HHEComponents,
 	weightPath string,
 	clientID string,
-) (*FLClient) {
+) *FLClient {
 	logger.PrintHeader("--- Client ---")
 	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON")
 
@@ -46,7 +47,7 @@ func RunFLClient(
 		rand.Read(nonces[i])
 	}
 	logger.PrintFormatted("Nonces diminsion: [%d][%d]", len(nonces), len(nonces[0]))
-	
+
 	logger.PrintHeader("[Client - Offline] Generating counter")
 	counter := make([]byte, 64)
 	rand.Read(counter)
@@ -73,16 +74,20 @@ func RunFLClient(
 	logger.PrintHeader("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
 	PlainCKKSRingTs := EncryptData(logger, params, hheComponents.CkksEncoder, data, keystream)
 
-
+	// Create directory for ciphertextPath if it doesn't exist
+	ciphertextDir := filepath.Dir(ciphertextPath)
+	if err := os.MkdirAll(ciphertextDir, 0755); err != nil {
+		logger.PrintFormatted("Error creating directory %s: %v", ciphertextDir, err)
+		log.Fatalf("Failed to create directory for ciphertext: %v", err)
+	}
 	logger.PrintFormatted("[Client - Online] Saving the symmetric encrypted data into %s", ciphertextPath)
 	utils.Serialize(PlainCKKSRingTs, ciphertextPath)
 
 	return &FLClient{
-		Nonces: nonces,
-		Counter: counter,
+		Nonces:    nonces,
+		Counter:   counter,
 		KeyStream: keystream,
-		PlainCKKSRingTs: PlainCKKSRingTs,
-	} 
+	}
 }
 
 func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, mw utils.ModelWeights) [][]float64 {
@@ -167,11 +172,11 @@ func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, 
 }
 
 func EncryptData(
-	logger utils.Logger, 
+	logger utils.Logger,
 	params *keys_dealer.RubatoParams,
 	ckksEncoder RtF.CKKSEncoder,
 	data [][]float64,
-	keystream [][]uint64) ([]*RtF.PlaintextRingT) {
+	keystream [][]uint64) []*RtF.PlaintextRingT {
 	var plainCKKSRingTs []*RtF.PlaintextRingT
 
 	logger.PrintMemUsage("[Client - Online] Move data to the plaintext's coefficients")
@@ -191,6 +196,6 @@ func EncryptData(
 		}
 	}
 	logger.PrintFormatted("Symmetric encrypted data: %+v", plainCKKSRingTs)
-	
+
 	return plainCKKSRingTs
 }

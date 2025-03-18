@@ -41,10 +41,10 @@ func RunKeysDealer(
 	logger utils.Logger,
 	rootPath string,
 	paramIndex int) (
-	rubatoParams *RubatoParams, 
-	hheComponents *HHEComponents, 
+	rubatoParams *RubatoParams,
+	hheComponents *HHEComponents,
 	rubato RtF.MFVRubato,
-	) {
+) {
 	logger.PrintHeader("--- Keys Dealer ---")
 	logger.PrintHeader("[Keys Dealer] Preparing Common things for all FL Clients")
 	logger.PrintFormatted("Root Path: %s", rootPath)
@@ -55,6 +55,13 @@ func RunKeysDealer(
 
 	// Initialize HHE components
 	keysDir := filepath.Join(rootPath, configs.Keys)
+
+	// Create keysDir if it doesn't exist
+	if err := os.MkdirAll(keysDir, 0755); err != nil {
+		utils.HandleError(fmt.Errorf("failed to create keys directory: %v", err))
+	}
+	logger.PrintFormatted("Keys directory: %s", keysDir)
+
 	HHEKeysGen(logger, keysDir, rubatoParams.Params, rubatoParams.HalfBsParams)
 
 	// reading the already generated keys from a previous step, it will save time and memory :)
@@ -292,11 +299,11 @@ func SymmetricKeyGen(
 		logger.PrintMessage("Loading existing symmetric key and ciphertext")
 
 		// Load symmetric key
-		key := LoadSymmKey(symKeyPath, blockSize)
+		key = LoadSymmKey(symKeyPath, blockSize)
 
 		t := time.Now()
 		// Load ciphertext array kCt
-		kCt := LoadCiphertextArray(symCipherDir, params)
+		kCt = LoadCiphertextArray(symCipherDir, params)
 		logger.PrintRunningTime("Time to load the symmetric key FV ciphertext", t)
 
 		return key, kCt, nil

@@ -59,8 +59,11 @@ import (
 //================= The End xD =================//
 
 func main() {
+	logger := utils.NewLogger(utils.DEBUG)
+	t := time.Now()
 	// RunRubato()
 	RunFLHHE()
+	logger.PrintRunningTime("Total time to run the program", t)
 }
 
 func RunRubato() {
@@ -90,12 +93,10 @@ func RunFLHHE() {
 	logger.PrintFormatted("Rubato Instance Addr: %+v", &rubato)
 
 	flClients := make([]*client.FLClient, 3)
-	for round := 0; round < 1; round++ {
-		flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_137.json", "client1")
-		// flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_258.json")
-		// flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams.Params, "mnist_weights_exclude_469.json")
-		server.RunFLServer(logger, rootPath, flClients, rubatoParams, hheComponents, rubato)
-	}
+	flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_137.json", "client1")
+	flClients[1] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_258.json", "client2")
+	flClients[2] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_469.json", "client3")
+	server.RunFLServer(logger, rootPath, flClients, rubatoParams, hheComponents, rubato)
 }
 
 // Rubato is the one
@@ -188,12 +189,12 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	logger.PrintHeader("[Client - Offline] Generating the keystream z")
 	keystream = make([][]uint64, params.N())
-	for i := 0; i < params.N(); i++ {
+	for i := range params.N() {
 		keystream[i] = RtF.PlainRubato(blockSize, numRound, nonces[i], counter, key, params.PlainModulus(), sigma)
 	}
 
-	for s := 0; s < outputSize; s++ {
-		for i := 0; i < params.N()/2; i++ {
+	for s := range outputSize {
+		for i := range params.N() / 2 {
 			j := utils.BitReverse64(uint64(i), uint64(params.LogN()-1))
 			coefficients[s][j] = data[s][i]
 			coefficients[s][j+uint64(params.N()/2)] = data[s][i+params.N()/2]
@@ -202,10 +203,10 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	logger.PrintHeader("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
 	plainCKKSRingTs = make([]*RtF.PlaintextRingT, outputSize)
-	for s := 0; s < outputSize; s++ {
+	for s := range outputSize {
 		plainCKKSRingTs[s] = ckksEncoder.EncodeCoeffsRingTNew(coefficients[s], messageScaling) // scales up the plaintext message
 		poly := plainCKKSRingTs[s].Value()[0]
-		for i := 0; i < params.N(); i++ {
+		for i := range params.N() {
 			j := utils.BitReverse64(uint64(i), uint64(params.LogN()))
 			poly.Coeffs[0][j] = (poly.Coeffs[0][j] + keystream[i][s]) % params.PlainModulus() // modulo q addition between the keystream to the scaled message
 		}
@@ -220,7 +221,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	logger.PrintHeader("[Server - Offline] Performs linear transformation SlotToCoeffs^{FV} to produce Z")
 	t = time.Now()
-	for i := 0; i < outputSize; i++ {
+	for i := range outputSize {
 		fvKeyStreams[i] = fvEvaluator.SlotsToCoeffs(fvKeyStreams[i], stcModDown)
 		fvEvaluator.ModSwitchMany(fvKeyStreams[i], fvKeyStreams[i], fvKeyStreams[i].Level())
 	}
@@ -229,7 +230,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	logger.PrintHeader("[Server - Online] Scale up the symmetric ciphertext (Scale{FV}) into FV-ciphretext space (produce C)")
 	t = time.Now()
 	plaintexts = make([]*RtF.Plaintext, outputSize)
-	for s := 0; s < outputSize; s++ {
+	for s := range outputSize {
 		plaintexts[s] = RtF.NewPlaintextFVLvl(params, 0)
 		fvEncoder.FVScaleUp(plainCKKSRingTs[s], plaintexts[s])
 	}
@@ -237,7 +238,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	var ctBoot *RtF.Ciphertext
 	logger.PrintHeader("[Server - Online] Transciphering the symmetric ciphertext into CKKS ciphertext (produce M)")
-	for s := 0; s < outputSize; s++ {
+	for s := range outputSize {
 		// Encrypt and mod switch to the lowest level
 		ciphertext := RtF.NewCiphertextFVLvl(params, 1, 0)
 		ciphertext.Value()[0] = plaintexts[s].Value()[0].CopyNew()
@@ -257,7 +258,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 		logger.PrintRunningTime("HalfBoot", t)
 
 		valuesWant := make([]complex128, params.Slots())
-		for i := 0; i < params.Slots(); i++ {
+		for i := range params.Slots() {
 			valuesWant[i] = complex(data[s][i], 0)
 		}
 
