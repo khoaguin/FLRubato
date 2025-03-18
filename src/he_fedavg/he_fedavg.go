@@ -15,14 +15,11 @@ import (
 )
 
 func main() {
-	// ====================================================================
-	// FLClient: Load plaintext weights from JSON (after training in python)
-	// ====================================================================
 	var err error
 	root := FLRubato.FindRootPath()
 	logger := utils.NewLogger(utils.DEBUG)
 	nMaxElmPrint := 4 // the maximum number of elements we want to be printed when printing a vector
-	logger.PrintHeader("FLClient: Load plaintext weights from JSON (after training in python)")
+	logger.PrintHeader("FLClient: Load plaintext weights from JSON")
 	weightDir := filepath.Join(root, configs.MNIST)
 
 	weights := utils.NewModelWeights()

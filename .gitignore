@@ -19,14 +19,13 @@ libs/
 **/.server/
 experimentals/
 
-# The HE keys: be carefull since this one can go wild!
 /keys/
 
-# The CKKS ciphertexts: be carefull since this one can go wild!
-ciphertexts/*.bin
+ciphertexts/
+!/ciphertexts/Ciphertexts.go
 
-# The weights: be carefull since this one can go wild!
 /weights/*
 
-# outputs
+# running outputs
 outputs/
+logs/

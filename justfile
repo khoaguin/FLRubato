@@ -53,6 +53,16 @@ run:
 run-hhe:
     go run src/hhe_fedavg/hhe_fedavg.go
 
+[group('hhe')]
+build-hhe:
+    go build -o /dev/null src/hhe_fedavg/hhe_fedavg.go
+
+[group('hhe')]
+lint-hhe:
+    # cd src/hhe_fedavg && golangci-lint run
+    go vet src/hhe_fedavg/hhe_fedavg.go
+
+
 # ---------------------------------------------------------------------------------------------------------------------
 [group('test')]
 test:

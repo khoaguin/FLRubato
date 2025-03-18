@@ -2,11 +2,9 @@ package main
 
 import (
 	"crypto/rand"
-	"encoding/binary"
 	"fmt"
 	"log"
 	"math"
-	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -15,6 +13,10 @@ import (
 	"flhhe/configs"
 	"flhhe/src/RtF"
 	"flhhe/src/utils"
+
+	"flhhe/src/hhe_fedavg/client"
+	"flhhe/src/hhe_fedavg/keys_dealer"
+	"flhhe/src/hhe_fedavg/server"
 )
 
 //================= How Rubato Works: =================//
@@ -35,8 +37,8 @@ import (
 		|-> a keystream as ks = [N][BS-4]uint64, (Each element of keystream has 4 columns less than
 		|-> the actual block size, since we drop 4 elements because of the noise addition)
 	6. Symmetric Data Encryption
-		- To encrypt the data using the symmetric keystream, we first move data to the plaintext's
-		|-> coefficients and then use CKKS Encode function to have data as a CKKS polynomial ring.
+		- To encrypt the data using the symmetric keystream, we first move data to the plaintext's coefficients
+		|-> and then use CKKS Encode function to have data as a CKKS polynomial ring.
 		|-> Finally, one can add the keystream to the polynomial coefficients and do the modular reduction.
 	7. Scaling up the data
 		- In this step, we Scale Up the encrypted data, PlaintextRingT (R_p) into a Plaintext (R_q),
@@ -55,26 +57,50 @@ import (
 		|-> the heavy computation for transciphering.
 */
 //================= The End xD =================//
+
 func main() {
 	logger := utils.NewLogger(utils.DEBUG)
-	root := FLRubato.FindRootPath()
+	t := time.Now()
+	// RunRubato()
+	RunFLHHE()
+	logger.PrintRunningTime("Total time to run the program", t)
+}
 
-	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON (after training in python)")
+func RunRubato() {
+	logger := utils.NewLogger(utils.DEBUG)
+	rootPath := FLRubato.FindRootPath()
+
 	mws := make([]utils.ModelWeights, 3)
-	mws[0] = utils.OpenModelWeights(logger, root, "mnist_weights_exclude_137.json")
-	mws[1] = utils.OpenModelWeights(logger, root, "mnist_weights_exclude_258.json")
-	mws[2] = utils.OpenModelWeights(logger, root, "mnist_weights_exclude_469.json")
+	mws[0] = utils.OpenModelWeights(logger, rootPath, "mnist_weights_exclude_137.json")
+	mws[1] = utils.OpenModelWeights(logger, rootPath, "mnist_weights_exclude_258.json")
+	mws[2] = utils.OpenModelWeights(logger, rootPath, "mnist_weights_exclude_469.json")
 
 	for _, mw := range mws {
 		mw.Print2DLayerDimension(logger)
 	}
+	Rubato(logger, rootPath, RtF.RUBATO80L, mws)
+}
 
-	Rubato(logger, root, RtF.RUBATO128L, mws, true) // Always use fullCoffs = true
+func RunFLHHE() {
+	// [WIP] Split this into RunFLClient and RunFLServer
+	logger := utils.NewLogger(utils.DEBUG)
+	rootPath := FLRubato.FindRootPath()
+	paramIndex := RtF.RUBATO128L
 
+	rubatoParams, hheComponents, rubato := keys_dealer.RunKeysDealer(logger, rootPath, paramIndex)
+	logger.PrintFormatted("Rubato Parameters: %+v", rubatoParams)
+	logger.PrintFormatted("HHE Components: %+v", hheComponents)
+	logger.PrintFormatted("Rubato Instance Addr: %+v", &rubato)
+
+	flClients := make([]*client.FLClient, 3)
+	flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_137.json", "client1")
+	flClients[1] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_258.json", "client2")
+	flClients[2] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_469.json", "client3")
+	server.RunFLServer(logger, rootPath, flClients, rubatoParams, hheComponents, rubato)
 }
 
 // Rubato is the one
-func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelWeights, fullCoffs bool) {
+func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelWeights) {
 	keysDir := filepath.Join(root, configs.Keys)
 	ciphersDir := filepath.Join(root, configs.Ciphertexts)
 
@@ -114,17 +140,10 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	rubatoModDown := RtF.RubatoModDownParams[paramIndex].CipherModDown
 	stcModDown := RtF.RubatoModDownParams[paramIndex].StCModDown
 
-	// fullCoffs denotes whether full coefficients are used for data encoding
-	// NOTE: we should always use fullCoffs=true for now
-	if fullCoffs {
-		params.SetLogFVSlots(params.LogN())
-		logger.PrintFormatted("params.N() = %d", params.N())
-	} else {
-		params.SetLogFVSlots(params.LogSlots())
-	}
+	params.SetLogFVSlots(params.LogN())
+	logger.PrintFormatted("params.N() = %d", params.N())
 
-	logger.PrintHeader("[Client - Initialization] HHE keys generation")
-	HHEKeysGen(logger, keysDir, params, halfBsParams, fullCoffs)
+	keys_dealer.HHEKeysGen(logger, keysDir, params, halfBsParams)
 
 	// reading the already generated keys from a previous step, it will save time and memory :)
 	fvEncoder, ckksEncoder, fvEncryptor, ckksDecryptor, halfBootstrapper, fvEvaluator = InitHHEScheme(
@@ -137,9 +156,8 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	// Rubato instance
 	rubato := RtF.NewMFVRubato(paramIndex, params, fvEncoder, fvEncryptor, fvEvaluator, rubatoModDown[0])
 
-	var data [][]float64
 	logger.PrintHeader("[Client] Preparing the data")
-	data = preparingData(logger, outputSize, params, mws[0])
+	data := client.PreparingData(logger, outputSize, params, mws[0])
 
 	// Allocating the coefficients
 	coefficients := make([][]float64, outputSize)
@@ -148,7 +166,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	}
 
 	logger.PrintHeader("[Client - Initialization] Symmetric Key Generation and Encryption")
-	key, kCt, err := SymmetricKeyGen(logger, keysDir, blockSize, params, rubato)
+	key, kCt, err := keys_dealer.SymmetricKeyGen(logger, keysDir, blockSize, params, rubato)
 	if err != nil {
 		log.Fatalf("Failed to generate symmetric key: %v", err)
 	}
@@ -171,12 +189,12 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	logger.PrintHeader("[Client - Offline] Generating the keystream z")
 	keystream = make([][]uint64, params.N())
-	for i := 0; i < params.N(); i++ {
+	for i := range params.N() {
 		keystream[i] = RtF.PlainRubato(blockSize, numRound, nonces[i], counter, key, params.PlainModulus(), sigma)
 	}
 
-	for s := 0; s < outputSize; s++ {
-		for i := 0; i < params.N()/2; i++ {
+	for s := range outputSize {
+		for i := range params.N() / 2 {
 			j := utils.BitReverse64(uint64(i), uint64(params.LogN()-1))
 			coefficients[s][j] = data[s][i]
 			coefficients[s][j+uint64(params.N()/2)] = data[s][i+params.N()/2]
@@ -185,10 +203,10 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	logger.PrintHeader("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
 	plainCKKSRingTs = make([]*RtF.PlaintextRingT, outputSize)
-	for s := 0; s < outputSize; s++ {
+	for s := range outputSize {
 		plainCKKSRingTs[s] = ckksEncoder.EncodeCoeffsRingTNew(coefficients[s], messageScaling) // scales up the plaintext message
 		poly := plainCKKSRingTs[s].Value()[0]
-		for i := 0; i < params.N(); i++ {
+		for i := range params.N() {
 			j := utils.BitReverse64(uint64(i), uint64(params.LogN()))
 			poly.Coeffs[0][j] = (poly.Coeffs[0][j] + keystream[i][s]) % params.PlainModulus() // modulo q addition between the keystream to the scaled message
 		}
@@ -196,14 +214,14 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	var fvKeyStreams []*RtF.Ciphertext
 	//fvKeyStreams = rubato.Crypt(nonces, counter, kCt, rubatoModDown)
-	logger.PrintHeader("[Server - Offline] Evaluates the keystreams (Eval^{FV} to produce V")
+	logger.PrintHeader("[Server - Offline] Evaluates the keystreams (Eval^{FV}) to produce V")
 	t := time.Now()
 	fvKeyStreams = rubato.CryptNoModSwitch(nonces, counter, kCt) // Compute ciphertexts without modulus switching
 	logger.PrintRunningTime("Time to evaluate the keystreams (Eval^{FV}) to produce V", t)
 
 	logger.PrintHeader("[Server - Offline] Performs linear transformation SlotToCoeffs^{FV} to produce Z")
 	t = time.Now()
-	for i := 0; i < outputSize; i++ {
+	for i := range outputSize {
 		fvKeyStreams[i] = fvEvaluator.SlotsToCoeffs(fvKeyStreams[i], stcModDown)
 		fvEvaluator.ModSwitchMany(fvKeyStreams[i], fvKeyStreams[i], fvKeyStreams[i].Level())
 	}
@@ -212,7 +230,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 	logger.PrintHeader("[Server - Online] Scale up the symmetric ciphertext (Scale{FV}) into FV-ciphretext space (produce C)")
 	t = time.Now()
 	plaintexts = make([]*RtF.Plaintext, outputSize)
-	for s := 0; s < outputSize; s++ {
+	for s := range outputSize {
 		plaintexts[s] = RtF.NewPlaintextFVLvl(params, 0)
 		fvEncoder.FVScaleUp(plainCKKSRingTs[s], plaintexts[s])
 	}
@@ -220,7 +238,7 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 
 	var ctBoot *RtF.Ciphertext
 	logger.PrintHeader("[Server - Online] Transciphering the symmetric ciphertext into CKKS ciphertext (produce M)")
-	for s := 0; s < outputSize; s++ {
+	for s := range outputSize {
 		// Encrypt and mod switch to the lowest level
 		ciphertext := RtF.NewCiphertextFVLvl(params, 1, 0)
 		ciphertext.Value()[0] = plaintexts[s].Value()[0].CopyNew()
@@ -234,17 +252,13 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 		// The difference from the bootstrapping is that the last StC is missing.
 		// CAUTION: the scale of the ciphertext MUST be equal (or very close) to params.Scale
 		// To equalize the scale, the function evaluator.SetScale(ciphertext, parameters.Scale) can be used at the expense of one level.
-		if fullCoffs {
-			logger.PrintMessage("Halfboot X and outputs a CKKS-ciphertext M containing the CKKS encrypted messages in its slots")
-			t = time.Now()
-			ctBoot, _ = halfBootstrapper.HalfBoot(ciphertext, false)
-			logger.PrintRunningTime("HalfBoot", t)
-		} else {
-			ctBoot, _ = halfBootstrapper.HalfBoot(ciphertext, true)
-		}
+		logger.PrintMessage("Halfboot X and outputs a CKKS-ciphertext M containing the CKKS encrypted messages in its slots")
+		t = time.Now()
+		ctBoot, _ = halfBootstrapper.HalfBoot(ciphertext, false)
+		logger.PrintRunningTime("HalfBoot", t)
 
 		valuesWant := make([]complex128, params.Slots())
-		for i := 0; i < params.Slots(); i++ {
+		for i := range params.Slots() {
 			valuesWant[i] = complex(data[s][i], 0)
 		}
 
@@ -255,87 +269,6 @@ func Rubato(logger utils.Logger, root string, paramIndex int, mws []utils.ModelW
 		// save the CKKS ciphertext in a file for further computation
 		SaveCipher(logger, s, ciphersDir, ctBoot)
 	}
-}
-
-func preparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, mw utils.ModelWeights) [][]float64 {
-	data := make([][]float64, outputSize)
-
-	logger.PrintFormatted("The data structure is [%d][%d] ([outputSize][params.N()])", outputSize, params.N())
-	logger.PrintFormatted("We have the flatten weights as [%d] (for FC1) and [%d] (for FC2)",
-		len(mw.FC1Flatten), len(mw.FC2Flatten))
-
-	cnt := 0 // will use this counter for locating
-	// basically for each flattened FCx we will take as much full ciphertext space as it needs,
-	// for example, here, for 128L security, the output size is 60, so we have 60* ciphers each with
-	// 65536 elements. The FC1 has 100352 elements; therefore, we need 2 full ciphertext spaces to
-	// put it there. Of course, there will be some free space, which we use padding and 0 value.
-	// The data will be like:
-	// [0][FC1:Padding]
-	// [1][FC1:Padding]
-	// [2][FC2:Padding]
-	// [0][FC1:Padding]
-	// [1][FC1:Padding]
-	// [2][FC2:Padding]
-	//	...
-	// [60][Padding]
-
-	// start with FC1
-	cipherPerFC1 := int(math.Ceil(float64(len(mw.FC1Flatten)) / float64(params.N()))) // MNIST: 2
-	paddingLenFC1 := params.N() - (len(mw.FC1Flatten) / cipherPerFC1)                 // MNIST: 15360
-	fc1Space := params.N() - paddingLenFC1                                            // MNIST: 50176
-	logger.PrintFormatted("Number of ciphers required to store FC1: %d", cipherPerFC1)
-	logger.PrintFormatted("FC1 Space: %d", fc1Space)
-	logger.PrintFormatted("Padding length for each cipher required to store FC1: %d", paddingLenFC1)
-	if cipherPerFC1 > 0 {
-		for i := 0; i < cipherPerFC1; i++ {
-			data[cnt] = make([]float64, params.N())
-			for j := 0; j < params.N(); j++ {
-				if j < fc1Space {
-					data[cnt][j] = mw.FC1Flatten[(i*fc1Space)+j]
-				} else {
-					data[cnt][j] = float64(0) // for padding
-				}
-			}
-			cnt++ // moving to the next plaintext slot (row)
-		}
-	} else {
-		log.Fatalln("Something is wrong with the input data length!")
-	}
-
-	logger.PrintMessages("FC1 data space and the padding: ", data[cnt-1][fc1Space-4:fc1Space+4])
-
-	// then FC2
-	cipherPerFC2 := int(math.Ceil(float64(len(mw.FC2Flatten)) / float64(params.N())))
-	paddingLenFC2 := params.N() - (len(mw.FC2Flatten) / cipherPerFC2)
-	fc2Space := params.N() - paddingLenFC2
-	logger.PrintFormatted("Number of ciphers required to store FC2: %d", cipherPerFC2)
-	logger.PrintFormatted("FC2 Space: %d", fc2Space)
-	logger.PrintFormatted("Padding length required to store FC2: %d", paddingLenFC2)
-	if cipherPerFC2 > 0 {
-		for i := 0; i < cipherPerFC2; i++ {
-			data[cnt] = make([]float64, params.N())
-			for j := 0; j < params.N(); j++ {
-				if j < fc2Space {
-					data[cnt][j] = mw.FC2Flatten[(i*fc2Space)+j]
-				} else {
-					data[cnt][j] = float64(0) // for padding
-				}
-			}
-			cnt++ // moving to the next plaintext slot (row)
-		}
-	} else {
-		log.Fatalln("Something is wrong with the input data length!")
-	}
-	logger.PrintMessages("FC2 data space and the padding: ", data[cnt-1][fc2Space-4:fc2Space+4])
-
-	// filling the rest with padding (this is not efficient at all) -> the solution will be changing the parameters
-	// for s := cnt; s < outputSize; s++ {
-	// 	data[s] = make([]float64, params.N())
-	// 	for i := 0; i < params.N(); i++ {
-	// 		data[s][i] = float64(0)
-	// 	}
-	// }
-	return data
 }
 
 // SaveCipher save a ciphertext in the provided path
@@ -364,154 +297,6 @@ func LoadCipher(
 	err = utils.Deserialize(ciphertext, filepath.Join(ciphersDir, fileName))
 	utils.HandleError(err)
 	return ciphertext
-}
-
-// Generates and saves cryptographic keys for Homomorphic Hybrid Encryption (HHE).
-func HHEKeysGen(
-	logger utils.Logger,
-	keysDir string,
-	params *RtF.Parameters,
-	hbtParams *RtF.HalfBootParameters,
-	fullCoffs bool) {
-
-	var err error
-
-	// Check if all required files exist
-	secretKeyPath := filepath.Join(keysDir, configs.SecretKey)
-	publicKeyPath := filepath.Join(keysDir, configs.PublicKey)
-	rotationKeyPath := filepath.Join(keysDir, configs.RotationKeys)
-	relinKeysPath := filepath.Join(keysDir, configs.RelinearizationKeys)
-
-	fileExists := func(path string) bool {
-		_, err := os.Stat(path)
-		return !os.IsNotExist(err)
-	}
-
-	if fileExists(secretKeyPath) || fileExists(publicKeyPath) ||
-		fileExists(rotationKeyPath) || fileExists(relinKeysPath) {
-		logger.PrintMessage("Some key files already exist, skipping keys generation")
-		return
-	}
-
-	kgen := RtF.NewKeyGenerator(params)
-
-	logger.PrintMemUsage("Secret and Public Keys Generation")
-	sk, pk := kgen.GenKeyPairSparse(hbtParams.H)
-	err = utils.Serialize(sk, filepath.Join(keysDir, configs.SecretKey))
-	utils.HandleError(err)
-	err = utils.Serialize(pk, filepath.Join(keysDir, configs.PublicKey))
-	utils.HandleError(err)
-
-	fvEncoder := RtF.NewMFVEncoder(params)
-
-	// Generating half-bootstrapping keys
-	rotationsHalfBoot := kgen.GenRotationIndexesForHalfBoot(params.LogSlots(), hbtParams)
-
-	t := time.Now()
-	ptDiagMats := fvEncoder.GenSlotToCoeffMatFV(2) // radix = 2
-	logger.PrintMemUsage("StC Matrix Generation")
-	logger.PrintRunningTime("StC Matrix Generation", t)
-	//We cannot serialize the ptDiagMats, it doesn't support serialization
-	//err = utils.Serialize(ptDiagMats, filepath.Join(keysDir, configs.StCDiagMatrix))
-	//utils.HandleError(err)
-
-	t = time.Now()
-	rotationsStC := kgen.GenRotationIndexesForSlotsToCoeffsMat(ptDiagMats)
-	logger.PrintMemUsage("Rotation Indices Generation")
-	logger.PrintRunningTime("Rotation Indices Generation", t)
-	rotations := append(rotationsHalfBoot, rotationsStC...)
-	if !fullCoffs {
-		rotations = append(rotations, params.Slots()/2)
-	}
-
-	t = time.Now()
-	rotKeys := kgen.GenRotationKeysForRotations(rotations, true, sk)
-	logger.PrintMemUsage("Rotation Keys Generation")
-	logger.PrintRunningTime("Rotation Keys Generation", t)
-	err = utils.Serialize(rotKeys, filepath.Join(keysDir, configs.RotationKeys))
-	utils.HandleError(err)
-
-	t = time.Now()
-	rlk := kgen.GenRelinearizationKey(sk)
-	logger.PrintMemUsage("Relinearization Keys Generation")
-	logger.PrintRunningTime("Relinearization Keys Generation", t)
-	err = utils.Serialize(rlk, filepath.Join(keysDir, configs.RelinearizationKeys))
-	utils.HandleError(err)
-}
-
-// SymmetricKeyGen generates a symmetric key and its corresponding FV ciphertext
-// If the key and ciphertext already exist in storage, it loads and returns them.
-func SymmetricKeyGen(
-	logger utils.Logger,
-	keysDir string,
-	blockSize int,
-	params *RtF.Parameters,
-	rubato RtF.MFVRubato) (key []uint64, kCt []*RtF.Ciphertext, err error) {
-
-	symKeyPath := filepath.Join(keysDir, configs.SymmetricKey)
-	symCipherDir := filepath.Join(keysDir, configs.SymmetricKeyCipherDir)
-
-	fileExists := func(path string) bool {
-		_, err := os.Stat(path)
-		return !os.IsNotExist(err)
-	}
-
-	dirExists := func(path string) bool {
-		info, err := os.Stat(path)
-		return !os.IsNotExist(err) && info.IsDir()
-	}
-
-	if fileExists(symKeyPath) && dirExists(symCipherDir) {
-		logger.PrintMessage("Loading existing symmetric key and ciphertext")
-
-		// Load symmetric key
-		key, err := LoadSymmKey(symKeyPath, blockSize)
-		if err != nil {
-			fmt.Printf("Failed to load key: %v\n", err)
-			return nil, nil, fmt.Errorf("failed to load symmetric key: %v", err)
-		}
-
-		t := time.Now()
-		// Load ciphertext array kCt
-		kCt, err := LoadCiphertextArray(symCipherDir, params)
-		if err != nil {
-			fmt.Printf("Failed to load ciphertext array: %v\n", err)
-			return nil, nil, fmt.Errorf("failed to load FV ciphertext symmetric key: %v", err)
-		}
-		logger.PrintRunningTime("Time to load the symmetric key FV ciphertext", t)
-
-		return key, kCt, nil
-	}
-
-	// Generate new symmetric key
-	t := time.Now()
-	key = make([]uint64, blockSize)
-	for i := 0; i < blockSize; i++ {
-		key[i] = uint64(i + 1) // Use (1, ..., 16) for testing
-	}
-	logger.PrintRunningTime("Symmetric Key Generation", t)
-
-	// Save symmetric key
-	if err := SaveSymmKey(key, symKeyPath); err != nil {
-		fmt.Printf("Failed to save key: %v\n", err)
-		return nil, nil, fmt.Errorf("failed to save symmetric key: %v", err)
-	}
-	logger.PrintFormatted("Symmetric key saved to %s", symKeyPath)
-
-	// Compute FV Ciphertext of the symmetric key
-	logger.PrintMessage("Compute FV Ciphertext of the Symmetric Key")
-	t = time.Now()
-	kCt = rubato.EncKey(key)
-	logger.PrintRunningTime("Time to compute FV Ciphertext of the Symmetric Key: ", t)
-
-	// Save ciphertext array kCt
-	if err := SaveCiphertextArray(kCt, symCipherDir); err != nil {
-		fmt.Printf("Failed to save ciphertext array: %v\n", err)
-		return nil, nil, fmt.Errorf("failed to save FV ciphertext symmetric key: %v", err)
-	}
-	logger.PrintFormatted("FV Ciphertext of the Symmetric key saved to %s", symCipherDir)
-
-	return key, kCt, nil
 }
 
 // InitHHEScheme loads the homomorphic hybrid encryption keys from storage and initializes
@@ -597,119 +382,4 @@ func printDebug(
 
 	}
 
-}
-
-// SaveKey saves a sequential key array to a file
-func SaveSymmKey(key []uint64, filePath string) error {
-	// Create directory if it doesn't exist
-	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %v", err)
-	}
-
-	// Create or truncate the file
-	file, err := os.Create(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to create file: %v", err)
-	}
-	defer file.Close()
-
-	// Write each uint64 in binary format
-	for _, val := range key {
-		if err := binary.Write(file, binary.LittleEndian, val); err != nil {
-			return fmt.Errorf("failed to write key: %v", err)
-		}
-	}
-
-	return nil
-}
-
-// LoadKey loads a sequential key array from a file
-func LoadSymmKey(filePath string, blockSize int) ([]uint64, error) {
-	// Open the file
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %v", err)
-	}
-	defer file.Close()
-
-	// Create the key slice
-	key := make([]uint64, blockSize)
-
-	// Read each uint64 value
-	for i := 0; i < blockSize; i++ {
-		if err := binary.Read(file, binary.LittleEndian, &key[i]); err != nil {
-			return nil, fmt.Errorf("failed to read key at position %d: %v", i, err)
-		}
-	}
-
-	return key, nil
-}
-
-// SaveCiphertextArray saves an array of ciphertexts to individual files in a directory
-// Each ciphertext is saved with format "ct_%d.bin" where %d is the index
-func SaveCiphertextArray(ciphertexts []*RtF.Ciphertext, dirPath string) error {
-	// Create directory if it doesn't exist
-	if err := os.MkdirAll(dirPath, 0755); err != nil {
-		return fmt.Errorf("failed to create directory: %v", err)
-	}
-
-	// Save length file
-	lengthPath := filepath.Join(dirPath, "length.txt")
-	if err := os.WriteFile(lengthPath, []byte(strconv.Itoa(len(ciphertexts))), 0644); err != nil {
-		return fmt.Errorf("failed to write length file: %v", err)
-	}
-
-	// Save each ciphertext
-	for i, ct := range ciphertexts {
-		if ct == nil {
-			return fmt.Errorf("ciphertext at index %d is nil", i)
-		}
-
-		fileName := fmt.Sprintf("ct_%d.bin", i)
-		filePath := filepath.Join(dirPath, fileName)
-
-		if err := utils.Serialize(ct, filePath); err != nil {
-			return fmt.Errorf("failed to save ciphertext %d: %v", i, err)
-		}
-	}
-
-	return nil
-}
-
-// LoadCiphertextArray loads an array of ciphertexts from a directory
-// params is needed to create new ciphertext objects
-func LoadCiphertextArray(dirPath string, params *RtF.Parameters) ([]*RtF.Ciphertext, error) {
-	// Read length file
-	lengthPath := filepath.Join(dirPath, "length.txt")
-	lengthBytes, err := os.ReadFile(lengthPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read length file: %v", err)
-	}
-
-	length, err := strconv.Atoi(string(lengthBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse length: %v", err)
-	}
-
-	// Create array to hold ciphertexts
-	ciphertexts := make([]*RtF.Ciphertext, length)
-
-	// Load each ciphertext
-	for i := 0; i < length; i++ {
-		fileName := fmt.Sprintf("ct_%d.bin", i)
-		filePath := filepath.Join(dirPath, fileName)
-
-		// Create new ciphertext object
-		ct := RtF.NewCiphertextFVLvl(params, 1, 0)
-
-		// Deserialize into it
-		if err := utils.Deserialize(ct, filePath); err != nil {
-			return nil, fmt.Errorf("failed to load ciphertext %d: %v", i, err)
-		}
-
-		ciphertexts[i] = ct
-	}
-
-	return ciphertexts, nil
 }
