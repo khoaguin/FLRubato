@@ -359,7 +359,7 @@ func LoadCiphertextArray(dirPath string, params *RtF.Parameters) []*RtF.Cipherte
 	ciphertexts := make([]*RtF.Ciphertext, length)
 
 	// Load each ciphertext
-	for i := 0; i < length; i++ {
+	for i := range length {
 		fileName := fmt.Sprintf("ct_%d.bin", i)
 		filePath := filepath.Join(dirPath, fileName)
 

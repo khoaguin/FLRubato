@@ -82,7 +82,6 @@ func RunRubato() {
 }
 
 func RunFLHHE() {
-	// [WIP] Split this into RunFLClient and RunFLServer
 	logger := utils.NewLogger(utils.DEBUG)
 	rootPath := FLRubato.FindRootPath()
 	paramIndex := RtF.RUBATO128L
