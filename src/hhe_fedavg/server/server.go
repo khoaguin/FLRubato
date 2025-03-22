@@ -29,6 +29,9 @@ func RunFLServer(
 	symKeyFVCiphertext := keys_dealer.LoadCiphertextArray(symCipherDir, rubatoParams.Params)
 
 	for _, flClient := range flClients {
+		// Reset the rubato instance before processing each client
+		rubato.Reset(rubatoParams.RubatoModDown[0])
+
 		logger.PrintHeader("[Server - Offline] Evaluates the keystreams (Eval^{FV}) to produce V")
 		t := time.Now()
 		fvKeyStreams := rubato.CryptNoModSwitch(
@@ -111,6 +114,7 @@ func SaveCipher(
 	fileName := configs.CtNameFix + strconv.Itoa(index) + configs.CtFormat
 	err = utils.Serialize(ciphertext, filepath.Join(ciphersDir, fileName))
 	utils.HandleError(err)
+	logger.PrintFormatted("Ciphertext saved to %s", filepath.Join(ciphersDir, fileName))
 }
 
 // LoadCipher save a ciphertext in the provided path
