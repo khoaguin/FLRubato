@@ -28,26 +28,9 @@ _nc := '\033[0m'
     just --list
 
 # ---------------------------------------------------------------------------------------------------------------------
-[group('deps')]
-install-syftbox-dev:
-    #!/bin/bash
-    if [ -d "libs/SyftBox" ]; then
-        echo "SyftBox directory already exists in libs/"
-    else
-        echo "Creating libs directory and cloning SyftBox..."
-        mkdir -p libs/
-        cd libs/
-        git clone https://github.com/OpenMined/syft.git SyftBox
-        cd SyftBox
-        uv pip install -e .
-        echo "Installation completed"
-    fi
-
-# ---------------------------------------------------------------------------------------------------------------------
 [group('run')]
 run:
     go run src/main.go
-
 
 [group('hhe')]
 run-hhe:
@@ -68,4 +51,15 @@ lint-hhe:
 test:
     cd Rubato-server/ckks_fv
     go test -timeout=0s -bench=BenchmarkRtFRubato
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+[group('reset')]
+reset:
+    just reset-ciphertexts
+
+# Clean all directories in ciphertexts/ but preserve Ciphertexts.go file
+[group('reset')]
+reset-ciphertexts:
+    find ciphertexts/ -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} \;
 
