@@ -13,6 +13,7 @@ import (
 	"time"
 )
 
+// RunFLServer is the main entry point for the Federated Learning server
 func RunFLServer(
 	logger utils.Logger,
 	rootPath string,
@@ -22,86 +23,194 @@ func RunFLServer(
 	rubato RtF.MFVRubato,
 ) {
 	logger.PrintHeader("--- Aggregator Server ---")
+
+	// Load the FV encrypted symmetric key
+	symKeyFVCiphertext := loadSymmetricKey(logger, rootPath, rubatoParams)
+
+	// Process each client
+	for _, flClient := range flClients {
+		processClient(
+			logger,
+			rootPath,
+			flClient,
+			rubatoParams,
+			hheComponents,
+			rubato,
+			symKeyFVCiphertext,
+		)
+	}
+}
+
+// loadSymmetricKey loads the FV encrypted symmetric key
+func loadSymmetricKey(
+	logger utils.Logger,
+	rootPath string,
+	rubatoParams *keys_dealer.RubatoParams,
+) []*RtF.Ciphertext {
 	logger.PrintHeader("[Server - Offline] Loading the FV encrypted symmetric key")
 	keysDir := filepath.Join(rootPath, configs.Keys)
 	symCipherDir := filepath.Join(keysDir, configs.SymmetricKeyCipherDir)
 	logger.PrintFormatted("Symmetric key ciphertext directory: %s", symCipherDir)
-	symKeyFVCiphertext := keys_dealer.LoadCiphertextArray(symCipherDir, rubatoParams.Params)
+	return keys_dealer.LoadCiphertextArray(symCipherDir, rubatoParams.Params)
+}
 
-	for _, flClient := range flClients {
-		// Reset the rubato instance before processing each client
-		rubato.Reset(rubatoParams.RubatoModDown[0])
+// processClient handles the processing of a single client
+func processClient(
+	logger utils.Logger,
+	rootPath string,
+	flClient *client.FLClient,
+	rubatoParams *keys_dealer.RubatoParams,
+	hheComponents *keys_dealer.HHEComponents,
+	rubato RtF.MFVRubato,
+	symKeyFVCiphertext []*RtF.Ciphertext,
+) {
+	// Reset the rubato instance before processing
+	rubato.Reset(rubatoParams.RubatoModDown[0])
 
-		logger.PrintHeader("[Server - Offline] Evaluates the keystreams (Eval^{FV}) to produce V")
-		t := time.Now()
-		fvKeyStreams := rubato.CryptNoModSwitch(
-			flClient.Nonces,
-			flClient.Counter,
-			symKeyFVCiphertext,
-		)
-		logger.PrintRunningTime("Time to evaluate the keystreams (Eval^{FV}) to produce V", t)
-		logger.PrintFormatted("Keystreams dimension: [%d]", len(fvKeyStreams))
+	// Generate and process keystreams (Z)
+	fvKeyStreams := generateKeystreams(logger, flClient, rubatoParams, hheComponents, rubato, symKeyFVCiphertext)
 
-		logger.PrintHeader("[Server - Offline] Performs linear transformation SlotToCoeffs^{FV} to produce Z")
-		t = time.Now()
-		for i := range rubatoParams.OutputSize {
-			fvKeyStreams[i] = hheComponents.FvEvaluator.SlotsToCoeffs(fvKeyStreams[i], rubatoParams.StcModDown)
-			hheComponents.FvEvaluator.ModSwitchMany(fvKeyStreams[i], fvKeyStreams[i], fvKeyStreams[i].Level())
-		}
-		logger.PrintRunningTime("Time to perform linear transformation SlotToCoeffs^{FV} to produce Z", t)
+	// Create plaintexts from symmetric ciphertexts (C)
+	plaintexts := fvScaleUpSymCipher(logger, flClient, rubatoParams, hheComponents)
 
-		logger.PrintHeader("[Server - Online] Scale up the symmetric ciphertext (Scale{FV}) into FV-ciphretext space (produce C)")
-		plainCKKSRingTs := flClient.SymmCipher
-		t = time.Now()
-		plaintexts := make([]*RtF.Plaintext, rubatoParams.OutputSize)
-		for s := range rubatoParams.OutputSize {
-			plaintexts[s] = RtF.NewPlaintextFVLvl(rubatoParams.Params, 0)
-			hheComponents.FvEncoder.FVScaleUp(plainCKKSRingTs[s], plaintexts[s])
-		}
-		logger.PrintRunningTime("Time to scale up the symmetric ciphertext into FV-ciphertext space", t)
+	// Process each output size and generate CKKS ciphertexts
+	processCiphertexts(logger, rootPath, flClient, rubatoParams, hheComponents, fvKeyStreams, plaintexts)
+}
 
-		var ctBoot *RtF.Ciphertext
-		logger.PrintHeader("[Server - Online] Transciphering the symmetric ciphertext into CKKS ciphertext (produce M)")
-		for s := range rubatoParams.OutputSize {
-			// Encrypt and mod switch to the lowest level
-			ciphertext := RtF.NewCiphertextFVLvl(rubatoParams.Params, 1, 0)
-			ciphertext.Value()[0] = plaintexts[s].Value()[0].CopyNew()
-			logger.PrintMessage("Subtracting the homomorphically evaluated keystream Z from the symmetric ciphertext C (produce X)")
-			hheComponents.FvEvaluator.Sub(ciphertext, fvKeyStreams[s], ciphertext)
-			hheComponents.FvEvaluator.TransformToNTT(ciphertext, ciphertext)
-			ciphertext.SetScale(math.Exp2(math.Round(math.Log2(float64(rubatoParams.Params.Qi()[0]) / float64(rubatoParams.Params.PlainModulus()) * rubatoParams.MessageScaling))))
-			// Half-Bootstrap the ciphertext (homomorphic evaluation of ModRaise -> SubSum -> CtS -> EvalMod)
-			// It takes a ciphertext at level 0 (if not at level 0, then it will reduce it to level 0)
-			// and returns a ciphertext at level MaxLevel - k, where k is the depth of the bootstrapping circuit.
-			// The difference from the bootstrapping is that the last StC is missing.
-			// CAUTION: the scale of the ciphertext MUST be equal (or very close) to params.Scale
-			// To equalize the scale, the function evaluator.SetScale(ciphertext, parameters.Scale) can be used at the expense of one level.
-			logger.PrintMessage("Halfboot X and outputs a CKKS-ciphertext M containing the CKKS encrypted messages in its slots")
-			t = time.Now()
-			ctBoot, _ = hheComponents.HalfBootstrapper.HalfBoot(ciphertext, false)
-			logger.PrintRunningTime("HalfBoot", t)
+// generateKeystreams evaluates the keystreams and performs linear transformation
+func generateKeystreams(
+	logger utils.Logger,
+	flClient *client.FLClient,
+	rubatoParams *keys_dealer.RubatoParams,
+	hheComponents *keys_dealer.HHEComponents,
+	rubato RtF.MFVRubato,
+	symKeyFVCiphertext []*RtF.Ciphertext,
+) []*RtF.Ciphertext {
+	// Evaluate keystreams
+	logger.PrintHeader("[Server - Offline] Evaluates the keystreams (Eval^{FV}) to produce V")
+	t := time.Now()
+	fvKeyStreams := rubato.CryptNoModSwitch(
+		flClient.Nonces,
+		flClient.Counter,
+		symKeyFVCiphertext,
+	)
+	logger.PrintRunningTime("Time to evaluate the keystreams (Eval^{FV}) to produce V", t)
+	logger.PrintFormatted("Keystreams dimension: [%d]", len(fvKeyStreams))
 
-			valuesWant := make([]complex128, rubatoParams.Params.Slots())
-			for i := range rubatoParams.Params.Slots() {
-				valuesWant[i] = complex(flClient.PlaintextData[s][i], 0)
-			}
-
-			printString := fmt.Sprintf("Precision of HalfBoot(ciphertext[%d])", s)
-			logger.PrintHeader(printString)
-			printDebug(
-				logger,
-				rubatoParams.Params,
-				ctBoot,
-				valuesWant,
-				hheComponents.CkksDecryptor,
-				hheComponents.CkksEncoder,
-			)
-
-			cipherDir := filepath.Join(rootPath, configs.Ciphertexts, flClient.ClientID)
-			// save the CKKS ciphertext in a file for further computation
-			SaveCipher(logger, s, cipherDir, ctBoot)
-		}
+	// Perform linear transformation
+	logger.PrintHeader("[Server - Offline] Performs linear transformation SlotToCoeffs^{FV} to produce Z")
+	t = time.Now()
+	for i := range rubatoParams.OutputSize {
+		fvKeyStreams[i] = hheComponents.FvEvaluator.SlotsToCoeffs(fvKeyStreams[i], rubatoParams.StcModDown)
+		hheComponents.FvEvaluator.ModSwitchMany(fvKeyStreams[i], fvKeyStreams[i], fvKeyStreams[i].Level())
 	}
+	logger.PrintRunningTime("Time to perform linear transformation SlotToCoeffs^{FV} to produce Z", t)
+
+	return fvKeyStreams
+}
+
+// fvScaleUpSymCipher scales up the symmetric ciphertext into FV-ciphertext space
+func fvScaleUpSymCipher(
+	logger utils.Logger,
+	flClient *client.FLClient,
+	rubatoParams *keys_dealer.RubatoParams,
+	hheComponents *keys_dealer.HHEComponents,
+) []*RtF.Plaintext {
+	logger.PrintHeader("[Server - Online] Scale up the symmetric ciphertext (Scale{FV}) into FV-ciphretext space (produce C)")
+	plainCKKSRingTs := flClient.SymmCipher
+	t := time.Now()
+	plaintexts := make([]*RtF.Plaintext, rubatoParams.OutputSize)
+	for s := range rubatoParams.OutputSize {
+		plaintexts[s] = RtF.NewPlaintextFVLvl(rubatoParams.Params, 0)
+		hheComponents.FvEncoder.FVScaleUp(plainCKKSRingTs[s], plaintexts[s])
+	}
+	logger.PrintRunningTime("Time to scale up the symmetric ciphertext into FV-ciphertext space", t)
+
+	return plaintexts
+}
+
+// processCiphertexts handles the transciphering of symmetric ciphertext into CKKS ciphertext (M)
+func processCiphertexts(
+	logger utils.Logger,
+	rootPath string,
+	flClient *client.FLClient,
+	rubatoParams *keys_dealer.RubatoParams,
+	hheComponents *keys_dealer.HHEComponents,
+	fvKeyStreams []*RtF.Ciphertext,
+	plaintexts []*RtF.Plaintext,
+) {
+	logger.PrintHeader("[Server - Online] Transciphering the symmetric ciphertext into CKKS ciphertext (produce M)")
+
+	for s := range rubatoParams.OutputSize {
+		ciphertext := createInitialCiphertext(rubatoParams, plaintexts, s)
+
+		logger.PrintMessage("Subtracting the homomorphically evaluated keystream Z from the symmetric ciphertext C (produce X)")
+		hheComponents.FvEvaluator.Sub(ciphertext, fvKeyStreams[s], ciphertext)
+		hheComponents.FvEvaluator.TransformToNTT(ciphertext, ciphertext)
+		setScale(ciphertext, rubatoParams)
+
+		// Perform half-bootstrapping
+		ctBoot := performHalfBoot(logger, ciphertext, hheComponents)
+
+		// Generate debug values
+		valuesWant := generateDebugValues(flClient, rubatoParams, s)
+
+		// Print debug information
+		printString := fmt.Sprintf("Precision of HalfBoot(ciphertext[%d])", s)
+		logger.PrintHeader(printString)
+		printDebug(logger, rubatoParams.Params, ctBoot, valuesWant, hheComponents.CkksDecryptor, hheComponents.CkksEncoder)
+
+		// Save the ciphertext
+		cipherDir := filepath.Join(rootPath, configs.Ciphertexts, flClient.ClientID)
+		SaveCipher(logger, s, cipherDir, ctBoot)
+	}
+}
+
+// createInitialCiphertext creates and initializes a new ciphertext
+func createInitialCiphertext(
+	rubatoParams *keys_dealer.RubatoParams,
+	plaintexts []*RtF.Plaintext,
+	index int,
+) *RtF.Ciphertext {
+	ciphertext := RtF.NewCiphertextFVLvl(rubatoParams.Params, 1, 0)
+	ciphertext.Value()[0] = plaintexts[index].Value()[0].CopyNew()
+	return ciphertext
+}
+
+// setScale sets the appropriate scale for the ciphertext
+func setScale(
+	ciphertext *RtF.Ciphertext,
+	rubatoParams *keys_dealer.RubatoParams,
+) {
+	scale := math.Exp2(math.Round(math.Log2(float64(rubatoParams.Params.Qi()[0]) /
+		float64(rubatoParams.Params.PlainModulus()) * rubatoParams.MessageScaling)))
+	ciphertext.SetScale(scale)
+}
+
+// performHalfBoot performs the half-bootstrapping operation (M)
+func performHalfBoot(
+	logger utils.Logger,
+	ciphertext *RtF.Ciphertext,
+	hheComponents *keys_dealer.HHEComponents,
+) *RtF.Ciphertext {
+	logger.PrintMessage("Halfboot X and outputs a CKKS-ciphertext M containing the CKKS encrypted messages in its slots")
+	t := time.Now()
+	ctBoot, _ := hheComponents.HalfBootstrapper.HalfBoot(ciphertext, false)
+	logger.PrintRunningTime("HalfBoot", t)
+	return ctBoot
+}
+
+// generateDebugValues creates values for debugging and precision checking
+func generateDebugValues(
+	flClient *client.FLClient,
+	rubatoParams *keys_dealer.RubatoParams,
+	index int,
+) []complex128 {
+	valuesWant := make([]complex128, rubatoParams.Params.Slots())
+	for i := range rubatoParams.Params.Slots() {
+		valuesWant[i] = complex(flClient.PlaintextData[index][i], 0)
+	}
+	return valuesWant
 }
 
 func SaveCipher(
@@ -117,7 +226,7 @@ func SaveCipher(
 	logger.PrintFormatted("Ciphertext saved to %s", filepath.Join(ciphersDir, fileName))
 }
 
-// LoadCipher save a ciphertext in the provided path
+// LoadCipher loads a ciphertext from the provided path
 func LoadCipher(
 	logger utils.Logger,
 	ciphersDir string,
@@ -138,7 +247,6 @@ func printDebug(
 	decryptor RtF.CKKSDecryptor,
 	encoder RtF.CKKSEncoder) {
 	if utils.DEBUG {
-
 		valuesTest := encoder.DecodeComplex(decryptor.DecryptNew(ciphertext), params.LogSlots())
 		logSlots := params.LogSlots()
 		sigma := params.Sigma()
