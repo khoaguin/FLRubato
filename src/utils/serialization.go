@@ -8,7 +8,7 @@ import (
 	"os"
 )
 
-func Serialize(object interface{}, path string) (err error) {
+func Serialize(object any, path string) (err error) {
 
 	f, err := os.Create(path)
 	if err != nil {
@@ -37,7 +37,7 @@ func Serialize(object interface{}, path string) (err error) {
 	return
 }
 
-func Deserialize(object interface{}, path string) (err error) {
+func Deserialize(object any, path string) (err error) {
 
 	switch object := object.(type) {
 	case io.ReaderFrom:
@@ -67,11 +67,11 @@ func Deserialize(object interface{}, path string) (err error) {
 	return
 }
 
-func MarshalJSON(object interface{}) (data []byte, err error) {
+func MarshalJSON(object any) (data []byte, err error) {
 	return json.Marshal(object)
 }
 
-func UnMarshalJSON(data []byte) (object interface{}, err error) {
+func UnMarshalJSON(data []byte) (object any, err error) {
 	if err = json.Unmarshal(data, &object); err != nil {
 		return nil, fmt.Errorf("json.Unmarshal: %w", err)
 	} else {

@@ -14,10 +14,12 @@ import (
 )
 
 type FLClient struct {
-	Nonces          [][]byte
-	Counter         []byte
-	KeyStream       [][]uint64
-	PlainCKKSRingTs []*RtF.PlaintextRingT
+	ClientID      string
+	Nonces        [][]byte
+	Counter       []byte
+	KeyStream     [][]uint64
+	SymmCipher    []*RtF.PlaintextRingT
+	PlaintextData [][]float64 // for debug
 }
 
 func RunFLClient(
@@ -70,23 +72,25 @@ func RunFLClient(
 			params.Sigma)
 	}
 
-	ciphertextPath := filepath.Join(rootPath, configs.Ciphertexts, clientID, "symm_ciphertext.bin")
 	logger.PrintHeader("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
-	PlainCKKSRingTs := EncryptData(logger, params, hheComponents.CkksEncoder, data, keystream)
+	plainCKKSRingTs := EncryptData(logger, params, hheComponents.CkksEncoder, data, keystream)
 
-	// Create directory for ciphertextPath if it doesn't exist
+	ciphertextPath := filepath.Join(rootPath, configs.Ciphertexts, clientID, "symm_ciphertext.bin")
 	ciphertextDir := filepath.Dir(ciphertextPath)
 	if err := os.MkdirAll(ciphertextDir, 0755); err != nil {
 		logger.PrintFormatted("Error creating directory %s: %v", ciphertextDir, err)
 		log.Fatalf("Failed to create directory for ciphertext: %v", err)
 	}
-	logger.PrintFormatted("[Client - Online] Saving the symmetric encrypted data into %s", ciphertextPath)
-	utils.Serialize(PlainCKKSRingTs, ciphertextPath)
+	utils.Serialize(plainCKKSRingTs, ciphertextPath)
+	logger.PrintFormatted("[Client - Online] Symmetric encrypted data saved to %s", ciphertextPath)
 
 	return &FLClient{
-		Nonces:    nonces,
-		Counter:   counter,
-		KeyStream: keystream,
+		ClientID:      clientID,
+		Nonces:        nonces,
+		Counter:       counter,
+		KeyStream:     keystream,
+		SymmCipher:    plainCKKSRingTs,
+		PlaintextData: data,
 	}
 }
 
@@ -122,7 +126,7 @@ func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, 
 	if cipherPerFC1 > 0 {
 		for i := range cipherPerFC1 {
 			data[cnt] = make([]float64, params.N())
-			for j := 0; j < params.N(); j++ {
+			for j := range params.N() {
 				if j < fc1Space {
 					data[cnt][j] = mw.FC1Flatten[(i*fc1Space)+j]
 				} else {
@@ -145,9 +149,9 @@ func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, 
 	logger.PrintFormatted("FC2 Space: %d", fc2Space)
 	logger.PrintFormatted("Padding length required to store FC2: %d", paddingLenFC2)
 	if cipherPerFC2 > 0 {
-		for i := 0; i < cipherPerFC2; i++ {
+		for i := range cipherPerFC2 {
 			data[cnt] = make([]float64, params.N())
-			for j := 0; j < params.N(); j++ {
+			for j := range params.N() {
 				if j < fc2Space {
 					data[cnt][j] = mw.FC2Flatten[(i*fc2Space)+j]
 				} else {
@@ -177,16 +181,25 @@ func EncryptData(
 	ckksEncoder RtF.CKKSEncoder,
 	data [][]float64,
 	keystream [][]uint64) []*RtF.PlaintextRingT {
-	var plainCKKSRingTs []*RtF.PlaintextRingT
-
-	logger.PrintMemUsage("[Client - Online] Move data to the plaintext's coefficients")
+	logger.PrintHeader("[Client - Online] Move data to the plaintext's coefficients")
 	coefficients := make([][]float64, params.OutputSize)
 	for s := range params.OutputSize {
 		coefficients[s] = make([]float64, params.Params.N())
 	}
 
+	// Copy data to coefficients with bit-reversal
+	for s := range params.OutputSize {
+		for i := range params.Params.N() {
+			j := utils.BitReverse64(uint64(i), uint64(params.Params.LogN()-1))
+			if i < params.Params.N()/2 {
+				coefficients[s][j] = data[s][i]
+				coefficients[s][j+uint64(params.Params.N()/2)] = data[s][i+params.Params.N()/2]
+			}
+		}
+	}
+
 	logger.PrintMessage("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
-	plainCKKSRingTs = make([]*RtF.PlaintextRingT, params.OutputSize)
+	plainCKKSRingTs := make([]*RtF.PlaintextRingT, params.OutputSize)
 	for s := range params.OutputSize {
 		plainCKKSRingTs[s] = ckksEncoder.EncodeCoeffsRingTNew(coefficients[s], params.MessageScaling) // scales up the plaintext message
 		poly := plainCKKSRingTs[s].Value()[0]
