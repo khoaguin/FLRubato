@@ -15,6 +15,26 @@ import (
 )
 
 func main() {
+	RunHEFedAvg()
+}
+
+func RunHEFedAvg() {
+	root := FLRubato.FindRootPath()
+	logger := utils.NewLogger(utils.DEBUG)
+	weightDir := filepath.Join(root, configs.MNIST)
+
+	weight1 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_137.json", true)
+	weight2 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_258.json", true)
+	weight3 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_469.json", true)
+
+	weights := []utils.ModelWeights{weight1, weight2, weight3}
+	plaintextAvgFC1, plaintextAvgFC2 := plaintextAveraging(logger, weights)
+
+	saveToJSON(logger, weightDir, "plaintext_avg_fc1.json", plaintextAvgFC1)
+	saveToJSON(logger, weightDir, "plaintext_avg_fc2.json", plaintextAvgFC2)
+}
+
+func main_old() {
 	var err error
 	root := FLRubato.FindRootPath()
 	logger := utils.NewLogger(utils.DEBUG)
@@ -276,11 +296,57 @@ func main() {
 	// FLClient: Saving decrypted loaded weights into json
 	// ======================================================
 	logger.PrintHeader("FLClient: Saving decrypted loaded weights into json")
-	saveToJSON(decryptedAvgFC1, weightDir+"avgDecryptedFC1.json")
-	saveToJSON(decryptedAvgFC2, weightDir+"avgDecryptedFC2.json")
+	saveToJSON(logger, weightDir, "avgDecryptedFC1.json", decryptedAvgFC1)
+	saveToJSON(logger, weightDir, "avgDecryptedFC2.json", decryptedAvgFC2)
 }
 
-func encryptFlattened(plaintext []float64, numSlots int, params ckks.Parameters, encoder *ckks.Encoder, pk *rlwe.PublicKey) []*rlwe.Ciphertext {
+func clientLoadWeights(
+	logger utils.Logger,
+	weightDir string,
+	weightPath string,
+	print bool,
+) utils.ModelWeights {
+	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON")
+	var err error
+	weights := utils.NewModelWeights()
+	err = weights.LoadWeights(weightDir + weightPath)
+	utils.HandleError(err)
+	if print {
+		weights.Print2DLayerDimension(logger)
+		logger.PrintFormatted("weights.FC1_flatten len: %d", len(weights.FC1Flatten))
+		logger.PrintFormatted("weights.FC2_flatten len: %d", len(weights.FC2Flatten))
+	}
+	return weights
+}
+
+func plaintextAveraging(
+	logger utils.Logger,
+	weights []utils.ModelWeights,
+) ([]float64, []float64) {
+	// =================================
+	// Debugging: Plaintext Averaging
+	// =================================
+	logger.PrintHeader("[Debugging]: Plaintext Averaging")
+	wantAvgFC1 := make([]float64, len(weights[0].FC1Flatten))
+	wantAvgFC2 := make([]float64, len(weights[0].FC2Flatten))
+	for i := range wantAvgFC1 {
+		wantAvgFC1[i] = weights[0].FC1Flatten[i] + weights[1].FC1Flatten[i] + weights[2].FC1Flatten[i]
+		wantAvgFC1[i] *= 1.0 / 3.0
+	}
+	for i := range wantAvgFC2 {
+		wantAvgFC2[i] = weights[0].FC2Flatten[i] + weights[1].FC2Flatten[i] + weights[2].FC2Flatten[i]
+		wantAvgFC2[i] *= 1.0 / 3.0
+	}
+	return wantAvgFC1, wantAvgFC2
+}
+
+func encryptFlattened(
+	plaintext []float64,
+	numSlots int,
+	params ckks.Parameters,
+	encoder *ckks.Encoder,
+	pk *rlwe.PublicKey,
+) []*rlwe.Ciphertext {
 	numCiphertexts := len(plaintext) / numSlots
 	if len(plaintext)%numSlots != 0 {
 		numCiphertexts += 1
@@ -302,7 +368,12 @@ func encryptFlattened(plaintext []float64, numSlots int, params ckks.Parameters,
 }
 
 // HE encrypts a plaintext vector of float64 using the provided parameters and public key
-func encryptVec(plaintext []float64, params ckks.Parameters, encoder *ckks.Encoder, pk *rlwe.PublicKey) *rlwe.Ciphertext {
+func encryptVec(
+	plaintext []float64,
+	params ckks.Parameters,
+	encoder *ckks.Encoder,
+	pk *rlwe.PublicKey,
+) *rlwe.Ciphertext {
 	pt1 := ckks.NewPlaintext(params, params.MaxLevel())
 	if err := encoder.Encode(plaintext, pt1); err != nil {
 		panic(err)
@@ -317,7 +388,12 @@ func encryptVec(plaintext []float64, params ckks.Parameters, encoder *ckks.Encod
 	return ct1
 }
 
-func decryptDecode(dec *rlwe.Decryptor, ecd *ckks.Encoder, ct *rlwe.Ciphertext, params ckks.Parameters) ([]float64, error) {
+func decryptDecode(
+	dec *rlwe.Decryptor,
+	ecd *ckks.Encoder,
+	ct *rlwe.Ciphertext,
+	params ckks.Parameters,
+) ([]float64, error) {
 	dec_pt := dec.DecryptNew(ct)
 	// Decodes the plaintext
 	have := make([]float64, params.MaxSlots())
@@ -336,9 +412,10 @@ func calculateError(have []float64, want []float64) float64 {
 	return sum
 }
 
-func saveToJSON(data []float64, filename string) {
+func saveToJSON(logger utils.Logger, weightDir string, filename string, data []float64) {
 	// Create a file
-	file, err := os.Create(filename)
+	fileName := filepath.Join(weightDir, filename)
+	file, err := os.Create(fileName)
 	if err != nil {
 		panic(err)
 	}
@@ -350,4 +427,5 @@ func saveToJSON(data []float64, filename string) {
 	if err != nil {
 		panic(err)
 	}
+	logger.PrintFormatted("Saved plaintext data to %s", fileName)
 }
