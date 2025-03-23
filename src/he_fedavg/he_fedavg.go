@@ -9,13 +9,19 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/schemes/ckks"
 )
 
 func main() {
+	startTime := time.Now()
 	RunHEFedAvg()
+	endTime := time.Now()
+	logger := utils.NewLogger(utils.DEBUG)
+	logger.PrintHeader("Time to run HEFedAvg")
+	logger.PrintFormatted("Time taken: %f (s)", endTime.Sub(startTime).Seconds())
 }
 
 func RunHEFedAvg() {
@@ -32,6 +38,20 @@ func RunHEFedAvg() {
 
 	saveToJSON(logger, weightDir, "plaintext_avg_fc1.json", plaintextAvgFC1)
 	saveToJSON(logger, weightDir, "plaintext_avg_fc2.json", plaintextAvgFC2)
+
+	ckksParams, encodingPrecision, LogSlots, Slots := keysDealerCKKSParams(logger)
+	logger.PrintFormatted("CKKS Parameters: %+v", ckksParams)
+	logger.PrintFormatted("Encoding Precision: %d", encodingPrecision)
+	logger.PrintFormatted("Log Slots: %d", LogSlots)
+	logger.PrintFormatted("Slots: %d", Slots)
+
+	sk, pk, rlk, evk, ecd := keysDealerKeysGen(logger, ckksParams)
+	logger.PrintFormatted("Secret Key Binary Size: %d", sk.BinarySize())
+	logger.PrintFormatted("Public Key Binary Size: %d", pk.BinarySize())
+	logger.PrintFormatted("Relinearization key type: %T", rlk)
+	logger.PrintFormatted("Evaluation Key Set type: %T", evk)
+	logger.PrintFormatted("Encoder type: %T", ecd)
+
 }
 
 func main_old() {
@@ -338,6 +358,40 @@ func plaintextAveraging(
 		wantAvgFC2[i] *= 1.0 / 3.0
 	}
 	return wantAvgFC1, wantAvgFC2
+}
+
+func keysDealerCKKSParams(
+	logger utils.Logger,
+) (ckks.Parameters, uint, int, int) {
+	logger.PrintHeader("[Key Dealer]: CKKS Parameters")
+	var ckksParams ckks.Parameters
+	var err error
+	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
+		LogN:            16,                                    // A ring degree of 2^{16}
+		LogQ:            []int{55, 45, 45, 45, 45, 45, 45, 45}, // An initial prime of 55 bits and 7 primes of 45 bits
+		LogP:            []int{61},                             // The log2 size of the key-switching prime
+		LogDefaultScale: 45,                                    // The default log2 of the scaling factor
+	}); err != nil {
+		panic(err)
+	}
+	encodingPrecision := ckksParams.EncodingPrecision() // we will need this value later
+	LogSlots := ckksParams.LogMaxSlots()
+	Slots := 1 << LogSlots
+	return ckksParams, encodingPrecision, LogSlots, Slots
+}
+
+func keysDealerKeysGen(
+	logger utils.Logger,
+	ckksParams ckks.Parameters,
+) (*rlwe.SecretKey, *rlwe.PublicKey, *rlwe.RelinearizationKey, rlwe.EvaluationKeySet, *ckks.Encoder) {
+	logger.PrintHeader("[Key Dealer]: Keys Generation")
+	kgen := rlwe.NewKeyGenerator(ckksParams)
+	sk := kgen.GenSecretKeyNew()
+	pk := kgen.GenPublicKeyNew(sk)
+	rlk := kgen.GenRelinearizationKeyNew(sk)
+	evk := rlwe.NewMemEvaluationKeySet(rlk)
+	ecd := ckks.NewEncoder(ckksParams)
+	return sk, pk, rlk, evk, ecd
 }
 
 func encryptFlattened(
