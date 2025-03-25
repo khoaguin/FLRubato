@@ -5,7 +5,6 @@ import (
 	FLRubato "flhhe"
 	"flhhe/configs"
 	"flhhe/src/utils"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -13,6 +12,10 @@ import (
 
 	"github.com/tuneinsight/lattigo/v6/core/rlwe"
 	"github.com/tuneinsight/lattigo/v6/schemes/ckks"
+)
+
+const (
+	NUM_CLIENTS = 3
 )
 
 func main() {
@@ -29,339 +32,43 @@ func RunHEFedAvg() {
 	logger := utils.NewLogger(utils.DEBUG)
 	weightDir := filepath.Join(root, configs.MNIST)
 
-	weight1 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_137.json", true)
-	weight2 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_258.json", true)
-	weight3 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_469.json", true)
+	// ---- Keys Dealer ----
+	ckksParams, _, _, Slots := keysDealerCKKSParams(logger, true)
+	sk, pk, evk, ckksEncoder := keysDealerKeysGen(logger, ckksParams, true)
 
-	weights := []utils.ModelWeights{weight1, weight2, weight3}
+	// ---- Clients ----
+	weights := clientWeights(logger, weightDir, true)
+	encryptedWeights := clientEncryptWeights(logger, weights, Slots, ckksParams, ckksEncoder, pk, true)
+
+	// -- Aggregator Server --
+	encryptedAvg := aggregatorEncryptedFedAvg(logger, encryptedWeights, ckksParams, evk)
+
+	// -- Debugging --
 	plaintextAvgFC1, plaintextAvgFC2 := plaintextAveraging(logger, weights)
+	decryptedAvgFC1 := decryptAndDecode(logger, ckksEncoder, encryptedAvg.FC1Encrypted, ckksParams, sk)
+	decryptedAvgFC2 := decryptAndDecode(logger, ckksEncoder, encryptedAvg.FC2Encrypted, ckksParams, sk)
 
+	decryptedAvgFC1 = decryptedAvgFC1[:len(plaintextAvgFC1)]
+	decryptedAvgFC2 = decryptedAvgFC2[:len(plaintextAvgFC2)]
+
+	diff := calculateError(decryptedAvgFC1, plaintextAvgFC1)
+	logger.PrintFormatted("Comparing encrypted and plaintext calculations, error = : %f", diff)
+
+	diff = calculateError(decryptedAvgFC2, plaintextAvgFC2)
+	logger.PrintFormatted("Comparing encrypted and plaintext calculations, error = : %f", diff)
+
+	// Save the plaintext and decrypted averages to JSON files
 	saveToJSON(logger, weightDir, "plaintext_avg_fc1.json", plaintextAvgFC1)
 	saveToJSON(logger, weightDir, "plaintext_avg_fc2.json", plaintextAvgFC2)
 
-	ckksParams, encodingPrecision, LogSlots, Slots := keysDealerCKKSParams(logger)
-	logger.PrintFormatted("CKKS Parameters: %+v", ckksParams)
-	logger.PrintFormatted("Encoding Precision: %d", encodingPrecision)
-	logger.PrintFormatted("Log Slots: %d", LogSlots)
-	logger.PrintFormatted("Slots: %d", Slots)
+	saveToJSON(logger, weightDir, "decrypted_avg_fc1.json", decryptedAvgFC1)
+	saveToJSON(logger, weightDir, "decrypted_avg_fc2.json", decryptedAvgFC2)
 
-	sk, pk, rlk, evk, ecd := keysDealerKeysGen(logger, ckksParams)
-	logger.PrintFormatted("Secret Key Binary Size: %d", sk.BinarySize())
-	logger.PrintFormatted("Public Key Binary Size: %d", pk.BinarySize())
-	logger.PrintFormatted("Relinearization key type: %T", rlk)
-	logger.PrintFormatted("Evaluation Key Set type: %T", evk)
-	logger.PrintFormatted("Encoder type: %T", ecd)
-
-}
-
-func main_old() {
-	var err error
-	root := FLRubato.FindRootPath()
-	logger := utils.NewLogger(utils.DEBUG)
-	nMaxElmPrint := 4 // the maximum number of elements we want to be printed when printing a vector
-	logger.PrintHeader("FLClient: Load plaintext weights from JSON")
-	weightDir := filepath.Join(root, configs.MNIST)
-
-	weights := utils.NewModelWeights()
-	err = weights.LoadWeights(weightDir + "/mnist_weights_exclude_137.json")
-	utils.HandleError(err)
-
-	weights2 := utils.NewModelWeights()
-	err = weights2.LoadWeights(weightDir + "/mnist_weights_exclude_258.json")
-	utils.HandleError(err)
-
-	weights3 := utils.NewModelWeights()
-	err = weights3.LoadWeights(weightDir + "/mnist_weights_exclude_469.json")
-	utils.HandleError(err)
-
-	// Print the weights' dimensions
-	logger.PrintMessage("Model 1")
-	weights.Print2DLayerDimension(logger)
-
-	logger.PrintMessage("Model 2")
-	weights2.Print2DLayerDimension(logger)
-
-	logger.PrintMessage("Model 3")
-	weights3.Print2DLayerDimension(logger)
-
-	logger.PrintFormatted("weights.FC1_flatten len: %d", len(weights.FC1Flatten))
-	logger.PrintFormatted("weights.FC2_flatten len: %d", len(weights.FC2Flatten))
-
-	// =================================
-	// Debugging: Plaintext Averaging
-	// =================================
-	logger.PrintHeader("Debugging: Plaintext Averaging")
-	wantAvgFC1 := make([]float64, len(weights.FC1Flatten))
-	wantAvgFC2 := make([]float64, len(weights.FC2Flatten))
-	for i := 0; i < len(weights.FC1Flatten); i++ {
-		wantAvgFC1[i] = weights.FC1Flatten[i] + weights2.FC1Flatten[i] + weights3.FC1Flatten[i]
-		wantAvgFC1[i] *= 1.0 / 3.0
-	}
-	for i := 0; i < len(weights.FC2Flatten); i++ {
-		wantAvgFC2[i] = weights.FC2Flatten[i] + weights2.FC2Flatten[i] + weights3.FC2Flatten[i]
-		wantAvgFC2[i] *= 1.0 / 3.0
-	}
-
-	// =================================
-	// FLClient: Instantiating the ckks.Parameters
-	// =================================
-	logger.PrintHeader("FLClient: Instantiating the CKKS Parameters")
-	var params ckks.Parameters
-	if params, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
-		LogN:            16,                                    // A ring degree of 2^{16}
-		LogQ:            []int{55, 45, 45, 45, 45, 45, 45, 45}, // An initial prime of 55 bits and 7 primes of 45 bits
-		LogP:            []int{61},                             // The log2 size of the key-switching prime
-		LogDefaultScale: 45,                                    // The default log2 of the scaling factor
-	}); err != nil {
-		panic(err)
-	}
-	prec := params.EncodingPrecision() // we will need this value later
-
-	logger.PrintFormatted("Precision: %d", prec)
-	LogSlots := params.LogMaxSlots()
-	Slots := 1 << LogSlots
-	logger.PrintFormatted("Number of slots: %d", Slots)
-
-	// ==========================================
-	// FLClient / Trusted Keys Dealer: Keys Generation
-	// ==========================================
-	logger.PrintHeader("Trusted Keys Dealer: CKKS Keys Generation")
-	kgen := rlwe.NewKeyGenerator(params)
-	sk := kgen.GenSecretKeyNew()
-	pk := kgen.GenPublicKeyNew(sk) // Note that we can generate any number of public keys associated to the same Secret Key.
-	rlk := kgen.GenRelinearizationKeyNew(sk)
-	evk := rlwe.NewMemEvaluationKeySet(rlk)
-
-	// ecd := ckks.NewEncoder(params)
-	ecd2 := ckks.NewEncoder(params)
-
-	// ====================================================
-	// FLClient: Encrypting the weights homomorphically
-	// ====================================================
-	logger.PrintHeader("FLClient: Encrypting the weights homomorphically")
-	weights.FC1Encrypted = encryptFlattened(weights.FC1Flatten, Slots, params, ecd2, pk)
-	weights.FC2Encrypted = encryptFlattened(weights.FC2Flatten, Slots, params, ecd2, pk)
-	weights2.FC1Encrypted = encryptFlattened(weights2.FC1Flatten, Slots, params, ecd2, pk)
-	weights2.FC2Encrypted = encryptFlattened(weights2.FC2Flatten, Slots, params, ecd2, pk)
-	weights3.FC1Encrypted = encryptFlattened(weights3.FC1Flatten, Slots, params, ecd2, pk)
-	weights3.FC2Encrypted = encryptFlattened(weights3.FC2Flatten, Slots, params, ecd2, pk)
-
-	// loop through the weights and print out length and type
-	for i := 0; i < len(weights.FC1Encrypted); i++ {
-		logger.PrintFormatted("weights.FC1_encrypted[%d] type: %T", i, weights.FC1Encrypted[i])
-		logger.PrintMessages("metadata: ", weights.FC1Encrypted[i].MetaData)
-		// for getting more clear information you can use this
-		//metaData, _ := weights.FC1Encrypted[i].MetaData.MarshalJSON()
-		//logger.PrintMessages("metadata: ", string(metaData))
-	}
-
-	// ====================================
-	// FLAggregator: Encrypted Averaging
-	// ====================================
-	logger.PrintHeader("FLAggregator: Encrypted Averaging")
-	eval := ckks.NewEvaluator(params, evk)
-	scalar := 1.0 / 3.0
-
-	var encryptedAvgFC1 []*rlwe.Ciphertext
-	for i := 0; i < len(weights.FC1Encrypted); i++ {
-		temp := weights.FC1Encrypted[i]
-		temp, err = eval.AddNew(temp, weights2.FC1Encrypted[i])
-		if err != nil {
-			panic(err)
-		}
-		temp, err = eval.AddNew(temp, weights3.FC1Encrypted[i])
-		if err != nil {
-			panic(err)
-		}
-		temp, err = eval.MulRelinNew(temp, scalar)
-		if err != nil {
-			panic(err)
-		}
-		encryptedAvgFC1 = append(encryptedAvgFC1, temp)
-	}
-	logger.PrintMessages("encryptedAvgFC1FC1 len: ", len(encryptedAvgFC1))
-
-	var encryptedAvgFC2 []*rlwe.Ciphertext
-	for i := 0; i < len(weights.FC2Encrypted); i++ {
-		temp := weights.FC2Encrypted[i]
-		temp, err = eval.AddNew(temp, weights2.FC2Encrypted[i])
-		if err != nil {
-			panic(err)
-		}
-		temp, err = eval.AddNew(temp, weights3.FC2Encrypted[i])
-		if err != nil {
-			panic(err)
-		}
-		temp, err = eval.MulRelinNew(temp, scalar)
-		if err != nil {
-			panic(err)
-		}
-		encryptedAvgFC2 = append(encryptedAvgFC2, temp)
-	}
-	logger.PrintMessages("encryptedAvgFC2 len: ", len(encryptedAvgFC2))
-
-	// ===========================
-	// Debugging: Decrypt and Decode
-	// ===========================
-	logger.PrintHeader("Debugging: Decrypt and Decode")
-	dec := rlwe.NewDecryptor(params, sk)
-	var decryptedAvg []float64
-	for i := 0; i < len(encryptedAvgFC1); i++ {
-		decrypted, err := decryptDecode(dec, ecd2, encryptedAvgFC1[i], params)
-		if err != nil {
-			panic(err)
-		}
-		for j := 0; j < len(decrypted); j++ {
-			decryptedAvg = append(decryptedAvg, decrypted[j])
-		}
-	}
-
-	// Calculate the error
-	logger.PrintFormatted("wantAvgFC1 len: %d", len(wantAvgFC1))
-	logger.PrintFormatted("plainSum len: %d", len(decryptedAvg))
-	// trim sum to have the same length as wantAvgFC1
-	decryptedAvg = decryptedAvg[:len(wantAvgFC1)]
-	logger.PrintMessages("wantAvgFC1: ", wantAvgFC1[:nMaxElmPrint])
-	logger.PrintMessages("decryptedAvg: ", decryptedAvg[:nMaxElmPrint])
-
-	diff := calculateError(decryptedAvg, wantAvgFC1)
-	logger.PrintFormatted("Comparing encrypted and plaintext calculations, error = : %f", diff)
-
-	// ==================================
-	// FLAggreagtor: Saving encrypted weights to binary
-	// ==================================
-	logger.PrintHeader("FLAggreagtor: Saving encrypted weights to binary")
-	for i := 0; i < len(encryptedAvgFC1); i++ {
-		bytes, err := encryptedAvgFC1[i].MarshalBinary()
-		if err != nil {
-			panic(err)
-		}
-		filename := fmt.Sprintf(weightDir+"avgEncryptedFC1_part%d.bin", i)
-		err = os.WriteFile(filename, bytes, 0644)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	bytes, err := encryptedAvgFC2[0].MarshalBinary()
-	if err != nil {
-		panic(err)
-	}
-
-	filename := weightDir + "avgEncryptedFC2.bin"
-	err = os.WriteFile(filename, bytes, 0644)
-	if err != nil {
-		panic(err)
-	}
-
-	// ====================================
-	// FLClient: Loading encrypted avg weights from binary
-	// ====================================
-	logger.PrintHeader("FLClient: Loading encrypted avg weights from binary")
-	var loadedEncryptedAvgFC1 []*rlwe.Ciphertext
-	var loadedEncryptedAvgFC2 *rlwe.Ciphertext
-	for i := 0; i < len(encryptedAvgFC1); i++ {
-		filename := fmt.Sprintf(weightDir+"avgEncryptedFC1_part%d.bin", i)
-		bytes, err := os.ReadFile(filename)
-		if err != nil {
-			panic(err)
-		}
-		// Create a new ciphertext instance
-		ct := rlwe.NewCiphertext(params, 1, params.MaxLevel())
-		// Unmarshal the binary data into the ciphertext
-		err = ct.UnmarshalBinary(bytes)
-		if err != nil {
-			panic(err)
-		}
-		loadedEncryptedAvgFC1 = append(loadedEncryptedAvgFC1, ct)
-	}
-
-	loadedEncryptedAvgFC2 = rlwe.NewCiphertext(params, 1, params.MaxLevel())
-	err = loadedEncryptedAvgFC2.UnmarshalBinary(bytes)
-	if err != nil {
-		panic(err)
-	}
-
-	// =======================================
-	// FLClient: Decrypting the loaded weights
-	// =======================================
-	logger.PrintHeader("FLClient: Decrypting the loaded weights")
-	var decryptedAvgFC1 []float64
-	var decryptedAvgFC2 []float64
-	for i := 0; i < len(encryptedAvgFC1); i++ {
-		decrypted, err := decryptDecode(dec, ecd2, loadedEncryptedAvgFC1[i], params)
-		if err != nil {
-			panic(err)
-		}
-		for j := 0; j < len(decrypted); j++ {
-			decryptedAvgFC1 = append(decryptedAvgFC1, decrypted[j])
-		}
-	}
-	decryptedAvgFC1 = decryptedAvgFC1[:len(wantAvgFC1)]
-	diff = calculateError(decryptedAvgFC1, wantAvgFC1)
-	logger.PrintFormatted("Comparing decrypted loaded FC1 and plaintext calculations, error = : %f", diff)
-
-	decrypted, err := decryptDecode(dec, ecd2, loadedEncryptedAvgFC2, params)
-	if err != nil {
-		panic(err)
-	}
-	for j := 0; j < len(decrypted); j++ {
-		decryptedAvgFC2 = append(decryptedAvgFC2, decrypted[j])
-	}
-	decryptedAvgFC2 = decryptedAvgFC2[:len(wantAvgFC2)]
-	diff = calculateError(decryptedAvgFC2, wantAvgFC2)
-	logger.PrintFormatted("Comparing decrypted loaded FC2 and plaintext calculations, error = : %f", diff)
-
-	// ======================================================
-	// FLClient: Saving decrypted loaded weights into json
-	// ======================================================
-	logger.PrintHeader("FLClient: Saving decrypted loaded weights into json")
-	saveToJSON(logger, weightDir, "avgDecryptedFC1.json", decryptedAvgFC1)
-	saveToJSON(logger, weightDir, "avgDecryptedFC2.json", decryptedAvgFC2)
-}
-
-func clientLoadWeights(
-	logger utils.Logger,
-	weightDir string,
-	weightPath string,
-	print bool,
-) utils.ModelWeights {
-	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON")
-	var err error
-	weights := utils.NewModelWeights()
-	err = weights.LoadWeights(weightDir + weightPath)
-	utils.HandleError(err)
-	if print {
-		weights.Print2DLayerDimension(logger)
-		logger.PrintFormatted("weights.FC1_flatten len: %d", len(weights.FC1Flatten))
-		logger.PrintFormatted("weights.FC2_flatten len: %d", len(weights.FC2Flatten))
-	}
-	return weights
-}
-
-func plaintextAveraging(
-	logger utils.Logger,
-	weights []utils.ModelWeights,
-) ([]float64, []float64) {
-	// =================================
-	// Debugging: Plaintext Averaging
-	// =================================
-	logger.PrintHeader("[Debugging]: Plaintext Averaging")
-	wantAvgFC1 := make([]float64, len(weights[0].FC1Flatten))
-	wantAvgFC2 := make([]float64, len(weights[0].FC2Flatten))
-	for i := range wantAvgFC1 {
-		wantAvgFC1[i] = weights[0].FC1Flatten[i] + weights[1].FC1Flatten[i] + weights[2].FC1Flatten[i]
-		wantAvgFC1[i] *= 1.0 / 3.0
-	}
-	for i := range wantAvgFC2 {
-		wantAvgFC2[i] = weights[0].FC2Flatten[i] + weights[1].FC2Flatten[i] + weights[2].FC2Flatten[i]
-		wantAvgFC2[i] *= 1.0 / 3.0
-	}
-	return wantAvgFC1, wantAvgFC2
 }
 
 func keysDealerCKKSParams(
 	logger utils.Logger,
+	verbose bool,
 ) (ckks.Parameters, uint, int, int) {
 	logger.PrintHeader("[Key Dealer]: CKKS Parameters")
 	var ckksParams ckks.Parameters
@@ -377,13 +84,22 @@ func keysDealerCKKSParams(
 	encodingPrecision := ckksParams.EncodingPrecision() // we will need this value later
 	LogSlots := ckksParams.LogMaxSlots()
 	Slots := 1 << LogSlots
+
+	if verbose {
+		logger.PrintFormatted("CKKS Parameters: %+v", ckksParams)
+		logger.PrintFormatted("Encoding Precision: %d", encodingPrecision)
+		logger.PrintFormatted("Log Slots: %d", LogSlots)
+		logger.PrintFormatted("Slots: %d", Slots)
+	}
+
 	return ckksParams, encodingPrecision, LogSlots, Slots
 }
 
 func keysDealerKeysGen(
 	logger utils.Logger,
 	ckksParams ckks.Parameters,
-) (*rlwe.SecretKey, *rlwe.PublicKey, *rlwe.RelinearizationKey, rlwe.EvaluationKeySet, *ckks.Encoder) {
+	verbose bool,
+) (*rlwe.SecretKey, *rlwe.PublicKey, rlwe.EvaluationKeySet, *ckks.Encoder) {
 	logger.PrintHeader("[Key Dealer]: Keys Generation")
 	kgen := rlwe.NewKeyGenerator(ckksParams)
 	sk := kgen.GenSecretKeyNew()
@@ -391,7 +107,170 @@ func keysDealerKeysGen(
 	rlk := kgen.GenRelinearizationKeyNew(sk)
 	evk := rlwe.NewMemEvaluationKeySet(rlk)
 	ecd := ckks.NewEncoder(ckksParams)
-	return sk, pk, rlk, evk, ecd
+	if verbose {
+		logger.PrintFormatted("Secret Key Binary Size: %d", sk.BinarySize())
+		logger.PrintFormatted("Public Key Binary Size: %d", pk.BinarySize())
+		logger.PrintFormatted("Relinearization key type: %T", rlk)
+		logger.PrintFormatted("Evaluation Key Set type: %T", evk)
+		logger.PrintFormatted("Encoder type: %T", ecd)
+	}
+	return sk, pk, evk, ecd
+}
+
+func clientLoadWeights(
+	logger utils.Logger,
+	weightDir string,
+	weightPath string,
+	verbose bool,
+) utils.ModelWeights {
+	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON")
+	var err error
+	weights := utils.NewModelWeights()
+	err = weights.LoadWeights(weightDir + weightPath)
+	utils.HandleError(err)
+	if verbose {
+		weights.Print2DLayerDimension(logger)
+		logger.PrintFormatted("weights.FC1_flatten len: %d", len(weights.FC1Flatten))
+		logger.PrintFormatted("weights.FC2_flatten len: %d", len(weights.FC2Flatten))
+	}
+	return weights
+}
+
+func clientWeights(
+	logger utils.Logger,
+	weightDir string,
+	verbose bool,
+) []utils.ModelWeights {
+	weights1 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_137.json", verbose)
+	weights2 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_258.json", verbose)
+	weights3 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_469.json", verbose)
+
+	weights := []utils.ModelWeights{weights1, weights2, weights3}
+	return weights
+}
+
+func clientEncryptWeights(
+	logger utils.Logger,
+	weights []utils.ModelWeights,
+	slots int,
+	ckksParams ckks.Parameters,
+	ecd *ckks.Encoder,
+	pk *rlwe.PublicKey,
+	verbose bool,
+) []utils.ModelWeights {
+	logger.PrintHeader("[Client]: Encrypting the weights homomorphically")
+	for i := range weights {
+		weights[i].FC1Encrypted = encryptFlattened(weights[i].FC1Flatten, slots, ckksParams, ecd, pk)
+		weights[i].FC2Encrypted = encryptFlattened(weights[i].FC2Flatten, slots, ckksParams, ecd, pk)
+		if verbose {
+			logger.PrintFormatted("weights[%d].FC1_encrypted type: %T", i, weights[i].FC1Encrypted)
+			logger.PrintFormatted("weights[%d].FC2_encrypted type: %T", i, weights[i].FC2Encrypted)
+			// logger.PrintMessages("metadata: ", weights[i].FC1Encrypted[i].MetaData)
+		}
+	}
+	return weights
+}
+
+func plaintextAveraging(
+	logger utils.Logger,
+	weights []utils.ModelWeights,
+) ([]float64, []float64) {
+	logger.PrintHeader("[Debug]: Plaintext Averaging")
+	wantAvgFC1 := make([]float64, len(weights[0].FC1Flatten))
+	wantAvgFC2 := make([]float64, len(weights[0].FC2Flatten))
+	for i := range wantAvgFC1 {
+		wantAvgFC1[i] = weights[0].FC1Flatten[i] + weights[1].FC1Flatten[i] + weights[2].FC1Flatten[i]
+		wantAvgFC1[i] *= 1.0 / 3.0
+	}
+	for i := range wantAvgFC2 {
+		wantAvgFC2[i] = weights[0].FC2Flatten[i] + weights[1].FC2Flatten[i] + weights[2].FC2Flatten[i]
+		wantAvgFC2[i] *= 1.0 / 3.0
+	}
+	return wantAvgFC1, wantAvgFC2
+}
+
+func aggregatorEncryptedFedAvg(
+	logger utils.Logger,
+	weights []utils.ModelWeights,
+	ckksParams ckks.Parameters,
+	evk rlwe.EvaluationKeySet,
+) utils.ModelWeights {
+	logger.PrintHeader("FLAggregator: Encrypted Averaging")
+	eval := ckks.NewEvaluator(ckksParams, evk)
+	scalar := 1.0 / float64(NUM_CLIENTS)
+
+	// Get the number of ciphertexts per layer (FC1 and FC2)
+	numFC1Ciphertexts := len(weights[0].FC1Encrypted)
+	numFC2Ciphertexts := len(weights[0].FC2Encrypted)
+
+	// Initialize result arrays
+	avgFC1 := make([]*rlwe.Ciphertext, numFC1Ciphertexts)
+	avgFC2 := make([]*rlwe.Ciphertext, numFC2Ciphertexts)
+
+	// Process FC1 layer
+	for i := 0; i < numFC1Ciphertexts; i++ {
+		// Start with first client's ciphertext
+		var err error
+		avgFC1[i] = weights[0].FC1Encrypted[i]
+		// Add other clients' ciphertexts
+		for j := 1; j < NUM_CLIENTS; j++ {
+			avgFC1[i], err = eval.AddNew(avgFC1[i], weights[j].FC1Encrypted[i])
+			if err != nil {
+				panic(err)
+			}
+		}
+		// Multiply by scalar (1/NUM_CLIENTS)
+		avgFC1[i], err = eval.MulRelinNew(avgFC1[i], scalar)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Process FC2 layer
+	for i := 0; i < numFC2Ciphertexts; i++ {
+		// Start with first client's ciphertext
+		var err error
+		avgFC2[i] = weights[0].FC2Encrypted[i]
+		// Add other clients' ciphertexts
+		for j := 1; j < NUM_CLIENTS; j++ {
+			avgFC2[i], err = eval.AddNew(avgFC2[i], weights[j].FC2Encrypted[i])
+			if err != nil {
+				panic(err)
+			}
+		}
+		// Multiply by scalar (1/NUM_CLIENTS)
+		avgFC2[i], err = eval.MulRelinNew(avgFC2[i], scalar)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	// Create result model weights
+	result := utils.NewModelWeights()
+	result.FC1Encrypted = avgFC1
+	result.FC2Encrypted = avgFC2
+
+	return result
+}
+
+func decryptAndDecode(
+	logger utils.Logger,
+	ecd *ckks.Encoder,
+	ciphertext []*rlwe.Ciphertext,
+	params ckks.Parameters,
+	sk *rlwe.SecretKey,
+) []float64 {
+	logger.PrintHeader("[Debug]: Decrypt and Decode")
+	dec := rlwe.NewDecryptor(params, sk)
+	var decryptedAvg []float64
+	for i := range ciphertext {
+		decrypted, err := decryptDecode(ciphertext[i], dec, ecd, params)
+		if err != nil {
+			panic(err)
+		}
+		decryptedAvg = append(decryptedAvg, decrypted...)
+	}
+	return decryptedAvg
 }
 
 func encryptFlattened(
@@ -443,9 +322,9 @@ func encryptVec(
 }
 
 func decryptDecode(
+	ct *rlwe.Ciphertext,
 	dec *rlwe.Decryptor,
 	ecd *ckks.Encoder,
-	ct *rlwe.Ciphertext,
 	params ckks.Parameters,
 ) ([]float64, error) {
 	dec_pt := dec.DecryptNew(ct)
@@ -460,7 +339,7 @@ func decryptDecode(
 
 func calculateError(have []float64, want []float64) float64 {
 	var sum float64
-	for i := 0; i < len(have); i++ {
+	for i := range have {
 		sum += math.Abs(have[i] - want[i])
 	}
 	return sum
