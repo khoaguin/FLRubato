@@ -208,7 +208,7 @@ func aggregatorEncryptedFedAvg(
 	avgFC2 := make([]*rlwe.Ciphertext, numFC2Ciphertexts)
 
 	// Process FC1 layer
-	for i := 0; i < numFC1Ciphertexts; i++ {
+	for i := range numFC1Ciphertexts {
 		// Start with first client's ciphertext
 		var err error
 		avgFC1[i] = weights[0].FC1Encrypted[i]
@@ -227,7 +227,7 @@ func aggregatorEncryptedFedAvg(
 	}
 
 	// Process FC2 layer
-	for i := 0; i < numFC2Ciphertexts; i++ {
+	for i := range numFC2Ciphertexts {
 		// Start with first client's ciphertext
 		var err error
 		avgFC2[i] = weights[0].FC2Encrypted[i]
@@ -286,7 +286,7 @@ func encryptFlattened(
 	}
 	// logger.PrintFormatted("numCiphertexts: %d", numCiphertexts)
 	result := make([]*rlwe.Ciphertext, numCiphertexts)
-	for i := 0; i < numCiphertexts; i++ {
+	for i := range numCiphertexts {
 		plaintextStart := i * numSlots
 		plaintextEnd := (i + 1) * numSlots
 		if plaintextEnd > len(plaintext) {
