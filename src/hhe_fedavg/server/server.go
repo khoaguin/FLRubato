@@ -8,6 +8,7 @@ import (
 	"flhhe/src/utils"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -39,6 +40,10 @@ func RunFLServer(
 			symKeyFVCiphertext,
 		)
 	}
+
+	// Load the ciphertexts and do HEFedAvg
+	heFedAvg(logger, rootPath, flClients, rubatoParams, hheComponents)
+
 }
 
 // loadSymmetricKey loads the FV encrypted symmetric key
@@ -158,7 +163,7 @@ func processCiphertexts(
 		// Print debug information
 		printString := fmt.Sprintf("Precision of HalfBoot(ciphertext[%d])", s)
 		logger.PrintHeader(printString)
-		printDebug(logger, rubatoParams.Params, ctBoot, valuesWant, hheComponents.CkksDecryptor, hheComponents.CkksEncoder)
+		PrintDebug(logger, rubatoParams.Params, ctBoot, valuesWant, hheComponents.CkksDecryptor, hheComponents.CkksEncoder)
 
 		// Save the ciphertext
 		cipherDir := filepath.Join(rootPath, configs.Ciphertexts, flClient.ClientID)
@@ -200,6 +205,50 @@ func performHalfBoot(
 	return ctBoot
 }
 
+func heFedAvg(
+	logger utils.Logger,
+	rootPath string,
+	flClients []*client.FLClient,
+	rubatoParams *keys_dealer.RubatoParams,
+	hheComponents *keys_dealer.HHEComponents,
+) {
+	logger.PrintHeader("[Server - Online] HEFedAvg")
+
+	// Load the ciphertexts
+	ciphertexts := make([][]*RtF.Ciphertext, len(flClients))
+	for i := range flClients {
+		ciphertexts[i] = make([]*RtF.Ciphertext, rubatoParams.OutputSize)
+		cipherDir := filepath.Join(rootPath, configs.Ciphertexts, flClients[i].ClientID)
+		for j := range rubatoParams.OutputSize {
+			ciphertexts[i][j] = LoadCipher(logger, j, cipherDir, rubatoParams.Params)
+		}
+	}
+	logger.PrintFormatted("Ciphertexts: %+v", ciphertexts)
+
+	// Do HEFedAvg
+	avgCiphertexts := make([]*RtF.Ciphertext, rubatoParams.OutputSize)
+	for i := range rubatoParams.OutputSize {
+		avgCiphertexts[i] = ciphertexts[0][i].CopyNew().Ciphertext()
+		for j := 1; j < len(flClients); j++ {
+			avgCiphertexts[i] = hheComponents.CkksEvaluator.AddNew(avgCiphertexts[i], ciphertexts[j][i])
+		}
+	}
+	for i := range rubatoParams.OutputSize {
+		avgCiphertexts[i] = hheComponents.CkksEvaluator.MultByConstNew(avgCiphertexts[i], 1/float64(len(flClients)))
+	}
+	logger.PrintFormatted("AvgCiphertexts: %+v", avgCiphertexts)
+
+	// Save the average ciphertexts
+	avgCiphertextsDir := filepath.Join(rootPath, configs.Ciphertexts, "avg")
+	os.MkdirAll(avgCiphertextsDir, 0755)
+	for i := range rubatoParams.OutputSize {
+		SaveCipher(logger, i, avgCiphertextsDir, avgCiphertexts[i])
+	}
+	logger.PrintFormatted("AvgCiphertexts saved to %s", avgCiphertextsDir)
+
+	logger.PrintHeader("[Server - Online] HEFedAvg done")
+}
+
 // generateDebugValues creates values for debugging and precision checking
 func generateDebugValues(
 	flClient *client.FLClient,
@@ -218,7 +267,6 @@ func SaveCipher(
 	index int,
 	ciphersDir string,
 	ciphertext *RtF.Ciphertext) {
-	logger.PrintHeader("Save the CKKS ciphertext in a file for further computation")
 	var err error
 	fileName := configs.CtNameFix + strconv.Itoa(index) + configs.CtFormat
 	err = utils.Serialize(ciphertext, filepath.Join(ciphersDir, fileName))
@@ -229,17 +277,17 @@ func SaveCipher(
 // LoadCipher loads a ciphertext from the provided path
 func LoadCipher(
 	logger utils.Logger,
+	index int,
 	ciphersDir string,
-	fileName string,
-	params *RtF.Parameters) any {
-	logger.PrintHeader("Load the CKKS ciphertext from the file")
+	params *RtF.Parameters) *RtF.Ciphertext {
+	fileName := configs.CtNameFix + strconv.Itoa(index) + configs.CtFormat
 	ciphertext := RtF.NewCiphertextFVLvl(params, 1, 0)
 	err := utils.Deserialize(ciphertext, filepath.Join(ciphersDir, fileName))
 	utils.HandleError(err)
 	return ciphertext
 }
 
-func printDebug(
+func PrintDebug(
 	logger utils.Logger,
 	params *RtF.Parameters,
 	ciphertext *RtF.Ciphertext,

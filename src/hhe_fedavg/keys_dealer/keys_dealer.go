@@ -35,6 +35,7 @@ type HHEComponents struct {
 	CkksDecryptor    RtF.CKKSDecryptor
 	FvEvaluator      RtF.MFVEvaluator
 	HalfBootstrapper *RtF.HalfBootstrapper
+	CkksEvaluator    RtF.CKKSEvaluator
 }
 
 func RunKeysDealer(
@@ -262,6 +263,8 @@ func InitHHEScheme(
 	fvEvaluator := RtF.NewMFVEvaluator(params, RtF.EvaluationKey{Rlk: rlKeys, Rtks: rotKeys}, ptDiagMat)
 	logger.PrintRunningTime("Total time to load the keys: ", t)
 
+	ckksEvaluator := RtF.NewCKKSEvaluator(params, RtF.EvaluationKey{Rlk: rlKeys, Rtks: rotKeys})
+
 	return &HHEComponents{
 		FvEncoder:        fvEncoder,
 		CkksEncoder:      ckksEncoder,
@@ -269,6 +272,7 @@ func InitHHEScheme(
 		CkksDecryptor:    ckksDecryptor,
 		HalfBootstrapper: halfBootstrapper,
 		FvEvaluator:      fvEvaluator,
+		CkksEvaluator:    ckksEvaluator,
 	}
 }
 

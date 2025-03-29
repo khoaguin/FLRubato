@@ -35,24 +35,16 @@ run-he:
 # ---------------------------------------------------------------------------------------------------------------------
 [group('hhe')]
 run-hhe:
-    go run src/hhe_fedavg/hhe_fedavg.go
+    go run src/hhe_fedavg/hhe_fedavg.go -mode run
 
-[group('hhe')]
-build-hhe:
-    go build -o /dev/null src/hhe_fedavg/hhe_fedavg.go
-
-[group('hhe')]
-lint-hhe:
-    # cd src/hhe_fedavg && golangci-lint run
-    go vet src/hhe_fedavg/hhe_fedavg.go
-
+compare-hhe:
+    go run src/hhe_fedavg/hhe_fedavg.go -mode compare
 
 # ---------------------------------------------------------------------------------------------------------------------
 [group('test')]
 test:
     cd Rubato-server/ckks_fv
     go test -timeout=0s -bench=BenchmarkRtFRubato
-
 
 # ---------------------------------------------------------------------------------------------------------------------
 [group('reset')]
