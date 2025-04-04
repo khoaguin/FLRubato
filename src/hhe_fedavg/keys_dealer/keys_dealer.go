@@ -120,6 +120,7 @@ func InitRubatoParams(logger utils.Logger, paramIndex int) *RubatoParams {
 	logger.PrintFormatted("plainModulus = %d", plainModulus)
 	logger.PrintFormatted("sigma = %f", sigma)
 	logger.PrintFormatted("params.N() = %d", params.N())
+	logger.PrintFormatted("params.Slots() = %d", params.Slots())
 
 	return &RubatoParams{
 		Blocksize:      blockSize,
@@ -284,7 +285,7 @@ func SymmetricKeyGen(
 	blockSize int,
 	params *RtF.Parameters,
 	rubato RtF.MFVRubato) (key []uint64, kCt []*RtF.Ciphertext, err error) {
-	logger.PrintHeader("[Keys Dealer] Generating Symmetric Keys")
+	logger.PrintHeader("[Keys Dealer] Generating / Loading Symmetric Keys")
 
 	symKeyPath := filepath.Join(keysDir, configs.SymmetricKey)
 	symCipherDir := filepath.Join(keysDir, configs.SymmetricKeyCipherDir)

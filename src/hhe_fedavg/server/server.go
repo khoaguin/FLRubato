@@ -295,7 +295,10 @@ func PrintDebug(
 	decryptor RtF.CKKSDecryptor,
 	encoder RtF.CKKSEncoder) {
 	if utils.DEBUG {
+		logger.PrintHeader("--- Print Debug ---")
 		valuesTest := encoder.DecodeComplex(decryptor.DecryptNew(ciphertext), params.LogSlots())
+		logger.PrintFormatted("ValuesTest length: %d", len(valuesTest))
+
 		logSlots := params.LogSlots()
 		sigma := params.Sigma()
 

@@ -1,12 +1,9 @@
 package main
 
 import (
-	"flag"
-	"path/filepath"
 	"time"
 
 	FLRubato "flhhe"
-	"flhhe/configs"
 	"flhhe/src/RtF"
 	"flhhe/src/utils"
 
@@ -52,31 +49,13 @@ import (
 		|->	evaluations. Keep in mind that one can also store this ciphertext to avoid the repeat of
 		|-> the heavy computation for transciphering.
 */
-//================= The End xD =================//
+//================= How Rubato Works End =================//
 func main() {
-	logger := utils.NewLogger(utils.DEBUG)
-	t := time.Now()
-
-	// Add flag for controlling execution
-	runMode := flag.String("mode", "run", "Execution mode: 'run' for RunFLHHE or 'compare' for compareResults")
-	flag.Parse()
-
-	switch *runMode {
-	case "run":
-		RunFLHHE()
-	case "compare":
-		compareResults()
-	default:
-		logger.PrintFormatted("Invalid mode. Use 'run' or 'compare'")
-	}
-	logger.PrintRunningTime("Total time to run the program", t)
-
-}
-
-func RunFLHHE() {
 	logger := utils.NewLogger(utils.DEBUG)
 	rootPath := FLRubato.FindRootPath()
 	paramIndex := RtF.RUBATO128L
+
+	t := time.Now()
 
 	rubatoParams, hheComponents, rubato := keys_dealer.RunKeysDealer(logger, rootPath, paramIndex)
 	logger.PrintFormatted("Rubato Parameters: %+v", rubatoParams)
@@ -88,37 +67,6 @@ func RunFLHHE() {
 	flClients[1] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_258.json", "client2")
 	flClients[2] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_469.json", "client3")
 	server.RunFLServer(logger, rootPath, flClients, rubatoParams, hheComponents, rubato)
-}
 
-func compareResults() {
-	logger := utils.NewLogger(utils.DEBUG)
-	rootPath := FLRubato.FindRootPath()
-
-	// Load the plaintext avg weights
-	plaintextAvgWeightsDir := filepath.Join(rootPath, configs.MNIST)
-	plaintextAvgWeights := utils.LoadFromJSON(logger, plaintextAvgWeightsDir, "plaintext_avg_fc2.json")
-	logger.PrintFormatted("Plaintext avg weights type: %T", plaintextAvgWeights)
-
-	paramIndex := RtF.RUBATO128L
-	rubatoParams, hheComponents, _ := keys_dealer.RunKeysDealer(logger, rootPath, paramIndex)
-	valuesWant := make([]complex128, rubatoParams.Params.Slots())
-	for i := range len(plaintextAvgWeights) {
-		valuesWant[i] = complex(plaintextAvgWeights[i], 0)
-	}
-
-	// Load the average ciphertexts
-	avgCiphertextsDir := filepath.Join(rootPath, configs.Ciphertexts, "avg")
-	avgCiphertexts := make([]*RtF.Ciphertext, rubatoParams.OutputSize)
-	for i := range rubatoParams.OutputSize {
-		avgCiphertexts[i] = server.LoadCipher(logger, i, avgCiphertextsDir, rubatoParams.Params)
-	}
-
-	// Decrypt the ciphertexts
-	ckksEncoder := hheComponents.CkksEncoder
-	ckksDecryptor := hheComponents.CkksDecryptor
-	valuesTest := ckksEncoder.DecodeComplex(ckksDecryptor.DecryptNew(avgCiphertexts[2]), rubatoParams.Params.LogSlots())
-	logger.PrintFormatted("Decrypted avg weights: %+v", valuesTest)
-
-	// Calculate the error
-	server.PrintDebug(logger, rubatoParams.Params, avgCiphertexts[2], valuesWant, ckksDecryptor, ckksEncoder)
+	logger.PrintRunningTime("Total time to run the program", t)
 }

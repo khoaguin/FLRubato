@@ -4,86 +4,91 @@ import (
 	FLRubato "flhhe"
 	"flhhe/configs"
 	"flhhe/src/RtF"
+	"flhhe/src/hhe_fedavg/keys_dealer"
+	"flhhe/src/hhe_fedavg/server"
 	"flhhe/src/utils"
+	"fmt"
 	"math"
 	"path/filepath"
 	"testing"
 )
 
-func TestLoadCipher(t *testing.T) {
+func TestHHEFedAvg(t *testing.T) {
 	logger := utils.NewLogger(utils.DEBUG)
-	root := FLRubato.FindRootPath()
-	keysDir := filepath.Join(root, configs.Keys)
-	ciphersDir := filepath.Join(root, configs.Ciphertexts)
+	rootPath := FLRubato.FindRootPath()
+
+	// Paths
+	plaintextAvgWeightsDir := filepath.Join(rootPath, configs.MNIST)
+	logger.PrintFormatted("Plaintext avg weights dir: %s", plaintextAvgWeightsDir)
+	avgCiphertextsDir := filepath.Join(rootPath, configs.Ciphertexts, "avg")
+	logger.PrintFormatted("Avg ciphertexts dir: %s", avgCiphertextsDir)
+
+	plaintextAvgFC2 := utils.LoadFromJSON(logger, plaintextAvgWeightsDir, "plaintext_avg_fc2.json")
+	logger.PrintFormatted("Plaintext avg weights type: %T", plaintextAvgFC2)
 
 	paramIndex := RtF.RUBATO128L
-	// MFV instances
-	var ckksEncoder RtF.CKKSEncoder
-	var ckksDecryptor RtF.CKKSDecryptor
-	var fvEvaluator RtF.MFVEvaluator
+	rubatoParams, hheComponents, _ := keys_dealer.RunKeysDealer(logger, rootPath, paramIndex)
 
-	// Rubato parameter
-	plainModulus := RtF.RubatoParams[paramIndex].PlainModulus
-
-	// RtF Rubato parameters, for full-coefficients only (128bit security)
-	halfBsParams := RtF.RtFRubatoParams[0]
-	params, err := halfBsParams.Params()
-	if err != nil {
-		panic(err)
+	logger.PrintHeader("Generating the plaintext values in complex128")
+	plaintextAvgFC2Complex := make([]complex128, rubatoParams.Params.Slots())
+	for i := range len(plaintextAvgFC2) {
+		plaintextAvgFC2Complex[i] = complex(plaintextAvgFC2[i], 0)
 	}
-	params.SetPlainModulus(plainModulus)
-	params.SetLogFVSlots(params.LogN())
 
-	logger.PrintFormatted("PtX len: %d, %d", params.Slots(), params.N())
+	// Load the average ciphertexts
+	logger.PrintHeader("Loading the average ciphertexts")
+	avgCiphertexts := make([]*RtF.Ciphertext, rubatoParams.OutputSize)
+	for i := range rubatoParams.OutputSize {
+		avgCiphertexts[i] = server.LoadCipher(logger, i, avgCiphertextsDir, rubatoParams.Params)
+	}
 
-	// reading the already generated keys from a previous step, it will save time and memory :)
-	_, ckksEncoder, _, ckksDecryptor, _, fvEvaluator = InitHHEScheme(logger, keysDir, params, halfBsParams)
+	// Decrypt the ciphertexts
+	logger.PrintHeader("Decrypting the ciphertexts")
+	ckksEncoder := hheComponents.CkksEncoder
+	ckksDecryptor := hheComponents.CkksDecryptor
+	decryptedAvgWeights := ckksEncoder.DecodeComplex(ckksDecryptor.DecryptNew(avgCiphertexts[2]), rubatoParams.Params.LogSlots())
+	logger.PrintFormatted("Decrypted avg weights length: %d", len(decryptedAvgWeights))
 
-	// wCt ciphertext for weights
-	wCt := LoadCipher(logger, 0, ciphersDir, params)
-	// bCt ciphertext for biases
-	bCt := LoadCipher(logger, 1, ciphersDir, params)
+	// Calculate the error
+	logger.PrintHeader("Calculating the error")
+	logSlots := rubatoParams.Params.LogSlots()
+	sigma := rubatoParams.Params.Sigma()
 
-	logger.PrintFormatted("degree %d", wCt.Degree())
-	// resCt to store the results
-	resCt := RtF.NewCiphertextFVLvl(params, 2, 0)
-	resCt.Value()[0] = wCt.Value()[0].CopyNew() // to make sure they have the same degree
+	logger.PrintFormatted("Level: %d (logQ = %d)", avgCiphertexts[2].Level(), rubatoParams.Params.LogQLvl(avgCiphertexts[2].Level()))
+	logger.PrintFormatted("Scale: 2^%f", math.Log2(avgCiphertexts[2].Scale()))
+	logger.PrintFormatted("decryptedAvgWeights{%d}: [%6.10f %6.10f %6.10f %6.10f...]",
+		len(decryptedAvgWeights), decryptedAvgWeights[0], decryptedAvgWeights[1], decryptedAvgWeights[2], decryptedAvgWeights[3])
+	logger.PrintFormatted("plaintextAvgWeights{%d}: [%6.10f %6.10f %6.10f %6.10f...]",
+		len(plaintextAvgFC2Complex), plaintextAvgFC2Complex[0], plaintextAvgFC2Complex[1], plaintextAvgFC2Complex[2], plaintextAvgFC2Complex[3])
 
-	// calculate the res = w*b
-	fvEvaluator.Mul(wCt, bCt, resCt)
+	precisionStats := RtF.GetPrecisionStats(rubatoParams.Params, ckksEncoder, nil, plaintextAvgFC2Complex, decryptedAvgWeights, logSlots, sigma)
+	fmt.Println(precisionStats.String())
 
-	wDec := ckksEncoder.DecodeComplex(ckksDecryptor.DecryptNew(wCt), params.LogSlots())
-	bDec := ckksEncoder.DecodeComplex(ckksDecryptor.DecryptNew(bCt), params.LogSlots())
-	resDec := ckksEncoder.DecodeComplex(ckksDecryptor.DecryptNew(resCt), params.LogSlots())
+	// Assert that precision values are in good range
+	minRealThreshold := 19.0 // Log2
+	minImagThreshold := 31.0 // Log2
+	if real(precisionStats.MinPrecision) < minRealThreshold || imag(precisionStats.MinPrecision) < minImagThreshold {
+		t.Errorf("Minimum precision below threshold: got (%.2f, %.2f), want at least (%.2f, %.2f)",
+			real(precisionStats.MinPrecision), imag(precisionStats.MinPrecision), minRealThreshold, minImagThreshold)
+	}
 
-	logger.PrintFormatted("Level: %d (logQ = %d)", wCt.Level(), params.LogQLvl(wCt.Level()))
-	logger.PrintFormatted("Scale: 2^%f", math.Log2(wCt.Scale()))
+	avgRealThreshold := 21.0 // Log2
+	avgImagThreshold := 36.0 // Log2
+	if real(precisionStats.MeanPrecision) < avgRealThreshold || imag(precisionStats.MeanPrecision) < avgImagThreshold {
+		t.Errorf("Average precision below threshold: got (%.2f, %.2f), want at least (%.2f, %.2f)",
+			real(precisionStats.MeanPrecision), imag(precisionStats.MeanPrecision), avgRealThreshold, avgImagThreshold)
+	}
 
-	logger.PrintFormatted("Weights{%d}: [%6.10f %6.10f %6.10f %6.10f...]", len(wDec), wDec[0], wDec[1], wDec[2], wDec[3])
-	logger.PrintFormatted("Biases{%d}: [%6.10f %6.10f %6.10f %6.10f...]", len(bDec), bDec[0], bDec[1], bDec[2], bDec[3])
-	logger.PrintFormatted("Results{%d}: [%6.10f %6.10f %6.10f %6.10f...]", len(resDec), resDec[0], resDec[1], resDec[2], resDec[3])
+	// Check error standard deviation (lower is better)
+	errStdFThreshold := 24.0 // Log2
+	errStdTThreshold := 16.0 // Log2
+	if math.Log2(precisionStats.STDFreq) > errStdFThreshold {
+		t.Errorf("Error stdF too high: got %.2f, want at most %.2f",
+			math.Log2(precisionStats.STDFreq), errStdFThreshold)
+	}
+	if math.Log2(precisionStats.STDTime) > errStdTThreshold {
+		t.Errorf("Error stdT too high: got %.2f, want at most %.2f",
+			math.Log2(precisionStats.STDTime), errStdTThreshold)
+	}
+
 }
-
-// ConvertCiphertext converts old Ciphertext to Lattigo v6 Ciphertext
-//func ConvertCiphertext(oldCt *RtF.Ciphertext, params RtF.Parameters) *rlwe.Ciphertext {
-//	// Create the new Ciphertext
-//	newCt := &rlwe.Ciphertext{}
-//
-//	// Create Metadata
-//	newCt.MetaData = &rlwe.MetaData{
-//		PlaintextMetaData: rlwe.PlaintextMetaData{
-//			Scale: rlwe.NewScaleModT(oldCt.Scale(), params.PlainModulus()),
-//		},
-//		CiphertextMetaData: rlwe.CiphertextMetaData{
-//			IsNTT: oldCt.IsNTT(),
-//			IsMontgomery: true,
-//		},
-//	}
-//
-//	// Convert []*ring.Poly to structs.Vector[ring.Poly]
-//	t := make([]ring.Poly, 1)
-//	newCt.Value = t
-//	copy(newCt.Value, oldCt.Value())
-//
-//	return newCt
-//}

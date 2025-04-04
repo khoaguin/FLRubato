@@ -7,7 +7,6 @@
 # - Don't over-engineer, keep it simple.
 # - Don't break existing commands
 # - Run just --fmt --unstable after adding new commands
-
 # ---------------------------------------------------------------------------------------------------------------------
 # Define color codes for terminal output in a Justfile
 _red := '\033[1;31m'
@@ -18,9 +17,7 @@ _nc := '\033[0m'
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Aliases
-
 # alias t := test
-
 # ---------------------------------------------------------------------------------------------------------------------
 # Commands
 
@@ -35,16 +32,16 @@ run-he:
 # ---------------------------------------------------------------------------------------------------------------------
 [group('hhe')]
 run-hhe:
-    go run src/hhe_fedavg/hhe_fedavg.go -mode run
-
-compare-hhe:
-    go run src/hhe_fedavg/hhe_fedavg.go -mode compare
+    echo "{{ _cyan }}Running HHE FedAvg {{ _nc }}"
+    go run src/hhe_fedavg/hhe_fedavg.go
+    echo "{{ _green }}HHE FedAvg completed {{ _nc }}"
 
 # ---------------------------------------------------------------------------------------------------------------------
 [group('test')]
-test:
-    cd Rubato-server/ckks_fv
-    go test -timeout=0s -bench=BenchmarkRtFRubato
+test-hhe:
+    echo "{{ _cyan }}Running end-to-end tests {{ _nc }}"
+    go test src/hhe_fedavg/hhe_fedavg_test.go -v
+    echo "{{ _green }}Test execution completed {{ _nc }}"
 
 # ---------------------------------------------------------------------------------------------------------------------
 [group('reset')]
@@ -55,4 +52,3 @@ reset:
 [group('reset')]
 reset-ciphertexts:
     find ciphertexts/ -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} \;
-
