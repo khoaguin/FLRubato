@@ -33,3 +33,6 @@ logs/
 
 # macOS files
 .DS_Store
+
+## ruff cache
+.ruff_cache/
