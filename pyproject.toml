@@ -1,7 +1,7 @@
 [project]
-name = "flhhe2"
+name = "flhhe"
 version = "0.1.0"
-description = "Add your description here"
+description = "Federated Learning with Hybrid Homomorphic Encryption"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -12,3 +12,6 @@ dependencies = [
     "tqdm>=4.67.1",
     "loguru>=0.7.3",
 ]
+
+[tool.setuptools]
+package-dir = {"" = "src"}

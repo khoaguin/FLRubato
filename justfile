@@ -36,6 +36,12 @@ setup-venv:
 prepare-data: setup-venv
     uv run src/model_training/dataset.py
 
+
+# ---------------------------------------------------------------------------------------------------------------------
+[group('train')]
+train-models: setup-venv
+    uv run src/model_training/train.py
+
 # ---------------------------------------------------------------------------------------------------------------------
 [group('he')]
 run-he:

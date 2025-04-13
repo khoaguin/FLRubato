@@ -32,8 +32,9 @@ def save_dataset(dataset: Subset, path: Union[str, Path]) -> None:
     logger.info(f"Dataset saved to {path}")
 
 
-def load_dataset(path: Union[str, Path]) -> Dataset:
-    logger.info(f"Loading dataset from {path}")
+def load_dataset(path: Union[str, Path], verbose: bool = False) -> Dataset:
+    if verbose:
+        logger.info(f"Loading dataset from {path}")
     return torch.load(path, weights_only=False)
 
 
@@ -79,15 +80,9 @@ if __name__ == "__main__":
         train_set, [4, 6, 9], MNIST_DATA_PATH / "train_no_469.pt"
     )
 
-    testset_137 = include_digits(
-        test_set, [1, 3, 7], MNIST_DATA_PATH / "testset_137.pt"
-    )
-    testset_258 = include_digits(
-        test_set, [2, 5, 8], MNIST_DATA_PATH / "testset_258.pt"
-    )
-    testset_469 = include_digits(
-        test_set, [4, 6, 9], MNIST_DATA_PATH / "testset_469.pt"
-    )
+    testset_137 = include_digits(test_set, [1, 3, 7], MNIST_DATA_PATH / "test_137.pt")
+    testset_258 = include_digits(test_set, [2, 5, 8], MNIST_DATA_PATH / "test_258.pt")
+    testset_469 = include_digits(test_set, [4, 6, 9], MNIST_DATA_PATH / "test_469.pt")
 
-    save_dataset(train_set, MNIST_DATA_PATH / "trainset_all.pt")
-    save_dataset(test_set, MNIST_DATA_PATH / "testset_all.pt")
+    save_dataset(train_set, MNIST_DATA_PATH / "train_all.pt")
+    save_dataset(test_set, MNIST_DATA_PATH / "test_all.pt")

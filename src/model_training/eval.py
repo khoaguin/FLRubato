@@ -2,7 +2,8 @@ from pathlib import Path
 from loguru import logger
 import torch
 
-from data import load_dataset, load_model_from_json
+from dataset import load_dataset
+from model import load_simple_mnist_model_from_json
 
 
 def evaluate_model(weights_path: Path, test_set_path: Path, device: str = "cpu"):
@@ -14,12 +15,12 @@ def evaluate_model(weights_path: Path, test_set_path: Path, device: str = "cpu")
     test_loader = torch.utils.data.DataLoader(
         test_set, batch_size=64, shuffle=False, num_workers=2
     )
-    model = load_model_from_json(weights_path)
-    model.eval()  # Set the model to evaluation mode
+    model = load_simple_mnist_model_from_json(weights_path)
+    model.eval()
     correct = 0
     total = 0
 
-    with torch.no_grad():  # Disable gradient computation
+    with torch.no_grad():
         for inputs, labels in test_loader:
             inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
