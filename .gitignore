@@ -29,3 +29,7 @@ ciphertexts/
 # running outputs
 outputs/
 logs/
+
+
+# macOS files
+.DS_Store
