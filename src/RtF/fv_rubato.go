@@ -3,10 +3,12 @@ package RtF
 import (
 	"flhhe/src/RtF/ring"
 	"fmt"
+
 	"golang.org/x/crypto/sha3"
 )
 
 type RubatoParam struct {
+	Name         string
 	Blocksize    int
 	PlainModulus uint64
 	NumRound     int
@@ -25,6 +27,7 @@ const (
 var RubatoParams = []RubatoParam{
 	{
 		// RUBATO80S
+		Name:         "RUBATO80S",
 		Blocksize:    16,
 		PlainModulus: 0x3ee0001,
 		NumRound:     2,
@@ -32,6 +35,7 @@ var RubatoParams = []RubatoParam{
 	},
 	{
 		// RUBATO80M
+		Name:         "RUBATO80M",
 		Blocksize:    36,
 		PlainModulus: 0x1fc0001,
 		NumRound:     2,
@@ -39,6 +43,7 @@ var RubatoParams = []RubatoParam{
 	},
 	{
 		// RUBATO80L
+		Name:         "RUBATO80L",
 		Blocksize:    64,
 		PlainModulus: 0x1fc0001,
 		NumRound:     2,
@@ -46,6 +51,7 @@ var RubatoParams = []RubatoParam{
 	},
 	{
 		// RUBATO128S
+		Name:         "RUBATO128S",
 		Blocksize:    16,
 		PlainModulus: 0x3ee0001,
 		NumRound:     5,
@@ -53,6 +59,7 @@ var RubatoParams = []RubatoParam{
 	},
 	{
 		// RUBATO128M
+		Name:         "RUBATO128M",
 		Blocksize:    36,
 		PlainModulus: 0x1fc0001,
 		NumRound:     3,
@@ -60,6 +67,7 @@ var RubatoParams = []RubatoParam{
 	},
 	{
 		// RUBATO128L
+		Name:         "RUBATO128L",
 		Blocksize:    64,
 		PlainModulus: 0x1fc0001,
 		NumRound:     2,

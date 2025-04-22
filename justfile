@@ -64,9 +64,6 @@ test-hhe:
 # ---------------------------------------------------------------------------------------------------------------------
 [group('reset')]
 reset:
-    just reset-ciphertexts
-
-# Clean all directories in ciphertexts/ but preserve Ciphertexts.go file
-[group('reset')]
-reset-ciphertexts:
-    find ciphertexts/ -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} \;
+    rm -rf logs/
+    rm -rf weights/MNIST/symmetric_encrypted/
+    rm -rf weights/MNIST/he_encrypted/

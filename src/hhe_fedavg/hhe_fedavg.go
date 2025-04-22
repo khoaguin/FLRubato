@@ -63,9 +63,9 @@ func main() {
 	logger.PrintFormatted("Rubato Instance Addr: %+v", &rubato)
 
 	flClients := make([]*client.FLClient, 3)
-	flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_137.json", "client2")
-	flClients[1] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_258.json", "client2")
-	flClients[2] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_469.json", "client3")
+	flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "weights_no_137.json", "do1")
+	flClients[1] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "weights_no_258.json", "do2")
+	flClients[2] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "weights_no_469.json", "do3")
 	server.RunFLServer(logger, rootPath, flClients, rubatoParams, hheComponents, rubato)
 
 	logger.PrintRunningTime("Total time to run the program", t)

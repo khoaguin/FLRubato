@@ -56,7 +56,7 @@ func Flatten2D(matrix [][]float64) []float64 {
 
 func OpenModelWeights(logger Logger, root string, weightFile string) ModelWeights {
 	var err error
-	weightDir := filepath.Join(root, configs.MNIST)
+	weightDir := filepath.Join(root, configs.PlaintextWeights)
 
 	weightPath := filepath.Join(weightDir, weightFile)
 	logger.PrintFormatted("Loading weights from %s", weightPath)

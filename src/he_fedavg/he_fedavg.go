@@ -30,20 +30,24 @@ func main() {
 func RunHEFedAvg() {
 	root := FLRubato.FindRootPath()
 	logger := utils.NewLogger(utils.DEBUG)
-	weightDir := filepath.Join(root, configs.MNIST)
+	weightDir := filepath.Join(root, configs.PlaintextWeights)
 
 	// ---- Keys Dealer ----
+	logger.PrintHeader("Keys Dealer")
 	ckksParams, _, _, Slots := keysDealerCKKSParams(logger, true)
 	sk, pk, evk, ckksEncoder := keysDealerKeysGen(logger, ckksParams, true)
 
 	// ---- Clients ----
+	logger.PrintHeader("Clients")
 	weights := clientWeights(logger, weightDir, true)
 	encryptedWeights := clientEncryptWeights(logger, weights, Slots, ckksParams, ckksEncoder, pk, true)
 
 	// -- Aggregator Server --
+	logger.PrintHeader("Aggregator Server")
 	encryptedAvg := aggregatorEncryptedFedAvg(logger, encryptedWeights, ckksParams, evk)
 
 	// -- Debugging --
+	logger.PrintHeader("Testing values")
 	plaintextAvgFC1, plaintextAvgFC2 := plaintextAveraging(logger, weights)
 	decryptedAvgFC1 := decryptAndDecode(logger, ckksEncoder, encryptedAvg.FC1Encrypted, ckksParams, sk)
 	decryptedAvgFC2 := decryptAndDecode(logger, ckksEncoder, encryptedAvg.FC2Encrypted, ckksParams, sk)
@@ -60,17 +64,13 @@ func RunHEFedAvg() {
 	// Save the plaintext and decrypted averages to JSON files
 	saveToJSON(logger, weightDir, "plaintext_avg_fc1.json", plaintextAvgFC1)
 	saveToJSON(logger, weightDir, "plaintext_avg_fc2.json", plaintextAvgFC2)
-
-	saveToJSON(logger, weightDir, "decrypted_avg_fc1.json", decryptedAvgFC1)
-	saveToJSON(logger, weightDir, "decrypted_avg_fc2.json", decryptedAvgFC2)
-
 }
 
 func keysDealerCKKSParams(
 	logger utils.Logger,
 	verbose bool,
 ) (ckks.Parameters, uint, int, int) {
-	logger.PrintHeader("[Key Dealer]: CKKS Parameters")
+	logger.PrintMessage("[Key Dealer]: CKKS Parameters")
 	var ckksParams ckks.Parameters
 	var err error
 	if ckksParams, err = ckks.NewParametersFromLiteral(ckks.ParametersLiteral{
@@ -100,7 +100,7 @@ func keysDealerKeysGen(
 	ckksParams ckks.Parameters,
 	verbose bool,
 ) (*rlwe.SecretKey, *rlwe.PublicKey, rlwe.EvaluationKeySet, *ckks.Encoder) {
-	logger.PrintHeader("[Key Dealer]: Keys Generation")
+	logger.PrintMessage("[Key Dealer]: Keys Generation")
 	kgen := rlwe.NewKeyGenerator(ckksParams)
 	sk := kgen.GenSecretKeyNew()
 	pk := kgen.GenPublicKeyNew(sk)
@@ -123,7 +123,7 @@ func clientLoadWeights(
 	weightPath string,
 	verbose bool,
 ) utils.ModelWeights {
-	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON")
+	logger.PrintMessage("[Client - Initialization]: Load plaintext weights from JSON")
 	var err error
 	weights := utils.NewModelWeights()
 	err = weights.LoadWeights(weightDir + weightPath)
@@ -141,9 +141,9 @@ func clientWeights(
 	weightDir string,
 	verbose bool,
 ) []utils.ModelWeights {
-	weights1 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_137.json", verbose)
-	weights2 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_258.json", verbose)
-	weights3 := clientLoadWeights(logger, weightDir, "/mnist_weights_exclude_469.json", verbose)
+	weights1 := clientLoadWeights(logger, weightDir, "/weights_no_137.json", verbose)
+	weights2 := clientLoadWeights(logger, weightDir, "/weights_no_258.json", verbose)
+	weights3 := clientLoadWeights(logger, weightDir, "/weights_no_469.json", verbose)
 
 	weights := []utils.ModelWeights{weights1, weights2, weights3}
 	return weights
@@ -158,7 +158,7 @@ func clientEncryptWeights(
 	pk *rlwe.PublicKey,
 	verbose bool,
 ) []utils.ModelWeights {
-	logger.PrintHeader("[Client]: Encrypting the weights homomorphically")
+	logger.PrintMessage("[Client]: Encrypting the weights homomorphically")
 	for i := range weights {
 		weights[i].FC1Encrypted = encryptFlattened(weights[i].FC1Flatten, slots, ckksParams, ecd, pk)
 		weights[i].FC2Encrypted = encryptFlattened(weights[i].FC2Flatten, slots, ckksParams, ecd, pk)
@@ -175,7 +175,7 @@ func plaintextAveraging(
 	logger utils.Logger,
 	weights []utils.ModelWeights,
 ) ([]float64, []float64) {
-	logger.PrintHeader("[Debug]: Plaintext Averaging")
+	logger.PrintMessage("[Debug]: Plaintext Averaging")
 	wantAvgFC1 := make([]float64, len(weights[0].FC1Flatten))
 	wantAvgFC2 := make([]float64, len(weights[0].FC2Flatten))
 	for i := range wantAvgFC1 {
@@ -195,7 +195,7 @@ func aggregatorEncryptedFedAvg(
 	ckksParams ckks.Parameters,
 	evk rlwe.EvaluationKeySet,
 ) utils.ModelWeights {
-	logger.PrintHeader("FLAggregator: Encrypted Averaging")
+	logger.PrintMessage("FLAggregator: Encrypted Averaging")
 	eval := ckks.NewEvaluator(ckksParams, evk)
 	scalar := 1.0 / float64(NUM_CLIENTS)
 
@@ -260,7 +260,7 @@ func decryptAndDecode(
 	params ckks.Parameters,
 	sk *rlwe.SecretKey,
 ) []float64 {
-	logger.PrintHeader("[Debug]: Decrypt and Decode")
+	logger.PrintMessage("[Debug]: Decrypt and Decode")
 	dec := rlwe.NewDecryptor(params, sk)
 	var decryptedAvg []float64
 	for i := range ciphertext {

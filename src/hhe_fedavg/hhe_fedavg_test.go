@@ -18,7 +18,7 @@ func TestHHEFedAvg(t *testing.T) {
 	rootPath := FLRubato.FindRootPath()
 
 	// Paths
-	plaintextAvgWeightsDir := filepath.Join(rootPath, configs.MNIST)
+	plaintextAvgWeightsDir := filepath.Join(rootPath, configs.PlaintextWeights)
 	logger.PrintFormatted("Plaintext avg weights dir: %s", plaintextAvgWeightsDir)
 	avgCiphertextsDir := filepath.Join(rootPath, configs.Ciphertexts, "avg")
 	logger.PrintFormatted("Avg ciphertexts dir: %s", avgCiphertextsDir)

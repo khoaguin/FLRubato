@@ -2,10 +2,12 @@ package client
 
 import (
 	"crypto/rand"
+	"fmt"
 	"log"
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"flhhe/configs"
 	"flhhe/src/RtF"
@@ -30,19 +32,20 @@ func RunFLClient(
 	weightPath string,
 	clientID string,
 ) *FLClient {
-	logger.PrintHeader("--- Client ---")
-	logger.PrintHeader("[Client - Initialization]: Load plaintext weights from JSON")
+	logger.PrintHeader(fmt.Sprintf("--- Client %s ---", clientID))
+	logger.PrintMessage("[Client - Initialization]: Load plaintext weights from JSON")
 
 	keysDir := filepath.Join(rootPath, configs.Keys)
 
 	modelWeights := utils.OpenModelWeights(logger, rootPath, weightPath)
 	modelWeights.Print2DLayerDimension(logger)
 
-	logger.PrintHeader("[Client] Preparing the data")
-	var data [][]float64 = PreparingData(logger, 3, params.Params, modelWeights)
+	logger.PrintMessage("[Client] Preparing the data")
+	outputSize := 2 // 1 for FC1 and 1 for FC2
+	var data [][]float64 = PreparingData(logger, outputSize, params.Params, modelWeights)
 	logger.PrintFormatted("Data.shape = [%d][%d]", len(data), len(data[0]))
 
-	logger.PrintHeader("[Client - Offline] Generating the nonces")
+	logger.PrintMessage("[Client - Offline] Generating the nonces")
 	nonces := make([][]byte, params.Params.N())
 	for i := range params.Params.N() {
 		nonces[i] = make([]byte, 64)
@@ -50,16 +53,16 @@ func RunFLClient(
 	}
 	logger.PrintFormatted("Nonces diminsion: [%d][%d]", len(nonces), len(nonces[0]))
 
-	logger.PrintHeader("[Client - Offline] Generating counter")
+	logger.PrintMessage("[Client - Offline] Generating counter")
 	counter := make([]byte, 64)
 	rand.Read(counter)
 	logger.PrintFormatted("Counter diminsion: [%d]", len(counter))
 
-	logger.PrintHeader("[Client - Offline] Loading the symmetric key")
+	logger.PrintMessage("[Client - Offline] Loading the symmetric key")
 	symKeyPath := filepath.Join(keysDir, configs.SymmetricKey)
 	symKey := keys_dealer.LoadSymmKey(symKeyPath, params.Blocksize)
 
-	logger.PrintHeader("[Client - Offline] Generating the keystream z")
+	logger.PrintMessage("[Client - Offline] Generating the keystream z")
 	keystream := make([][]uint64, params.Params.N())
 	for i := range params.Params.N() {
 		keystream[i] = RtF.PlainRubato(
@@ -72,17 +75,14 @@ func RunFLClient(
 			params.Sigma)
 	}
 
-	logger.PrintHeader("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
+	logger.PrintMessage("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
 	plainCKKSRingTs := EncryptData(logger, params, hheComponents.CkksEncoder, data, keystream)
 
-	ciphertextPath := filepath.Join(rootPath, configs.Ciphertexts, clientID, "symm_ciphertext.bin")
-	ciphertextDir := filepath.Dir(ciphertextPath)
-	if err := os.MkdirAll(ciphertextDir, 0755); err != nil {
-		logger.PrintFormatted("Error creating directory %s: %v", ciphertextDir, err)
-		log.Fatalf("Failed to create directory for ciphertext: %v", err)
-	}
-	utils.Serialize(plainCKKSRingTs, ciphertextPath)
-	logger.PrintFormatted("[Client - Online] Symmetric encrypted data saved to %s", ciphertextPath)
+	// Save the symmetric encrypted data
+	logger.PrintMessage("[Client - Online] Saving the symmetric encrypted data")
+	ciphertextDir := filepath.Join(rootPath, configs.SymmetricEncryptedWeights)
+	os.MkdirAll(ciphertextDir, 0755)
+	SavePlaintextRingTArray(logger, plainCKKSRingTs, ciphertextDir, clientID)
 
 	return &FLClient{
 		ClientID:      clientID,
@@ -101,25 +101,12 @@ func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, 
 	logger.PrintFormatted("We have the flatten weights as [%d] (for FC1) and [%d] (for FC2)",
 		len(mw.FC1Flatten), len(mw.FC2Flatten))
 
-	cnt := 0 // will use this counter for locating
-	// basically for each flattened FCx we will take as much full ciphertext space as it needs,
-	// for example, here, for 128L security, the output size is 60, so we have 60* ciphers each with
-	// 65536 elements. The FC1 has 100352 elements; therefore, we need 2 full ciphertext spaces to
-	// put it there. Of course, there will be some free space, which we use padding and 0 value.
-	// The data will be like:
-	// [0][FC1:Padding]
-	// [1][FC1:Padding]
-	// [2][FC2:Padding]
-	// [0][FC1:Padding]
-	// [1][FC1:Padding]
-	// [2][FC2:Padding]
-	//	...
-	// [60][Padding]
+	cnt := 0
 
 	// start with FC1
-	cipherPerFC1 := int(math.Ceil(float64(len(mw.FC1Flatten)) / float64(params.N()))) // MNIST: 2
-	paddingLenFC1 := params.N() - (len(mw.FC1Flatten) / cipherPerFC1)                 // MNIST: 15360
-	fc1Space := params.N() - paddingLenFC1                                            // MNIST: 50176
+	cipherPerFC1 := int(math.Ceil(float64(len(mw.FC1Flatten)) / float64(params.N())))
+	paddingLenFC1 := params.N() - (len(mw.FC1Flatten) / cipherPerFC1)
+	fc1Space := params.N() - paddingLenFC1
 	logger.PrintFormatted("Number of ciphers required to store FC1 = len(FC1Flatten) / params.N(): %d", cipherPerFC1)
 	logger.PrintFormatted("FC1 Space: %d", fc1Space)
 	logger.PrintFormatted("Padding length for each cipher required to store FC1: %d", paddingLenFC1)
@@ -165,13 +152,6 @@ func PreparingData(logger utils.Logger, outputSize int, params *RtF.Parameters, 
 	}
 	logger.PrintMessages("FC2 data space and the padding: ", data[cnt-1][fc2Space-4:fc2Space+4])
 
-	// filling the rest with padding (this is not efficient at all) -> the solution will be changing the parameters
-	// for s := cnt; s < outputSize; s++ {
-	// 	data[s] = make([]float64, params.N())
-	// 	for i := 0; i < params.N(); i++ {
-	// 		data[s][i] = float64(0)
-	// 	}
-	// }
 	return data
 }
 
@@ -181,7 +161,7 @@ func EncryptData(
 	ckksEncoder RtF.CKKSEncoder,
 	data [][]float64,
 	keystream [][]uint64) []*RtF.PlaintextRingT {
-	logger.PrintHeader("[Client - Online] Move data to the plaintext's coefficients")
+	logger.PrintMessage("[Client - Online] Move data to the plaintext's coefficients")
 	coefficients := make([][]float64, params.OutputSize)
 	for s := range params.OutputSize {
 		coefficients[s] = make([]float64, params.Params.N())
@@ -201,14 +181,82 @@ func EncryptData(
 	logger.PrintMessage("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
 	plainCKKSRingTs := make([]*RtF.PlaintextRingT, params.OutputSize)
 	for s := range params.OutputSize {
+		logger.PrintMessage("Scale up the plaintext message -> m̃")
 		plainCKKSRingTs[s] = ckksEncoder.EncodeCoeffsRingTNew(coefficients[s], params.MessageScaling) // scales up the plaintext message
 		poly := plainCKKSRingTs[s].Value()[0]
+		logger.PrintMessage("Modulo q addition between the keystream z and the scaled message -> c_{ctr}")
 		for i := range params.Params.N() {
 			j := utils.BitReverse64(uint64(i), uint64(params.Params.LogN()))
 			poly.Coeffs[0][j] = (poly.Coeffs[0][j] + keystream[i][s]) % params.Params.PlainModulus() // modulo q addition between the keystream to the scaled message
 		}
 	}
-	logger.PrintFormatted("Symmetric encrypted data: %+v", plainCKKSRingTs)
+	logger.PrintFormatted("Symmetric encrypted data: %+T, len = %d", plainCKKSRingTs, len(plainCKKSRingTs))
 
 	return plainCKKSRingTs
+}
+
+// SavePlaintextRingTArray saves an array of plaintexts to individual files in a directory
+func SavePlaintextRingTArray(logger utils.Logger, plaintexts []*RtF.PlaintextRingT, dirPath string, clientID string) error {
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %v", err)
+	}
+
+	// Save length file
+	lengthPath := filepath.Join(dirPath, fmt.Sprintf("%s_length.txt", clientID))
+	if err := os.WriteFile(lengthPath, []byte(strconv.Itoa(len(plaintexts))), 0644); err != nil {
+		return fmt.Errorf("failed to write length file: %v", err)
+	}
+
+	// Save each plaintext
+	for i, pt := range plaintexts {
+		if pt == nil {
+			return fmt.Errorf("plaintext at index %d is nil", i)
+		}
+
+		fileName := fmt.Sprintf("%s_pt_%d.bin", clientID, i)
+		filePath := filepath.Join(dirPath, fileName)
+
+		if err := utils.Serialize(pt, filePath); err != nil {
+			return fmt.Errorf("failed to save plaintext %d: %v", i, err)
+		}
+	}
+
+	logger.PrintFormatted("Symmetric encrypted data saved to %s", dirPath)
+
+	return nil
+}
+
+// LoadPlaintextRingTArray loads an array of plaintexts from a directory
+func LoadPlaintextRingTArray(dirPath string, clientID string, params *RtF.Parameters) []*RtF.PlaintextRingT {
+	// Read length file
+	lengthPath := filepath.Join(dirPath, fmt.Sprintf("%s_length.txt", clientID))
+	lengthBytes, err := os.ReadFile(lengthPath)
+	if err != nil {
+		panic(fmt.Errorf("failed to read length file: %v", err))
+	}
+
+	length, err := strconv.Atoi(string(lengthBytes))
+	if err != nil {
+		panic(fmt.Errorf("failed to parse length: %v", err))
+	}
+
+	// Create array to hold plaintexts
+	plaintexts := make([]*RtF.PlaintextRingT, length)
+
+	// Load each plaintext
+	for i := range length {
+		fileName := fmt.Sprintf("%s_pt_%d.bin", clientID, i)
+		filePath := filepath.Join(dirPath, fileName)
+
+		// Create new plaintext object
+		plaintexts[i] = RtF.NewPlaintextRingT(params)
+
+		// Deserialize into it
+		if err := utils.Deserialize(plaintexts[i], filePath); err != nil {
+			panic(fmt.Errorf("failed to load plaintext %d: %v", i, err))
+		}
+	}
+
+	return plaintexts
 }

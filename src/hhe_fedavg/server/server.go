@@ -23,7 +23,7 @@ func RunFLServer(
 	hheComponents *keys_dealer.HHEComponents,
 	rubato RtF.MFVRubato,
 ) {
-	logger.PrintHeader("--- Aggregator Server ---")
+	logger.PrintHeader("--- Server (Aggregator / Data Scientist) ---")
 
 	// Load the FV encrypted symmetric key
 	symKeyFVCiphertext := loadSymmetricKey(logger, rootPath, rubatoParams)
@@ -52,7 +52,7 @@ func loadSymmetricKey(
 	rootPath string,
 	rubatoParams *keys_dealer.RubatoParams,
 ) []*RtF.Ciphertext {
-	logger.PrintHeader("[Server - Offline] Loading the FV encrypted symmetric key")
+	logger.PrintMessage("[Server - Offline] Loading the FV encrypted symmetric key")
 	keysDir := filepath.Join(rootPath, configs.Keys)
 	symCipherDir := filepath.Join(keysDir, configs.SymmetricKeyCipherDir)
 	logger.PrintFormatted("Symmetric key ciphertext directory: %s", symCipherDir)
@@ -69,17 +69,19 @@ func processClient(
 	rubato RtF.MFVRubato,
 	symKeyFVCiphertext []*RtF.Ciphertext,
 ) {
+	logger.PrintMessage(fmt.Sprintf("--- Processing client %s ---", flClient.ClientID))
+
 	// Reset the rubato instance before processing
 	rubato.Reset(rubatoParams.RubatoModDown[0])
 
 	// Generate and process keystreams (Z)
 	fvKeyStreams := generateKeystreams(logger, flClient, rubatoParams, hheComponents, rubato, symKeyFVCiphertext)
 
-	// Create plaintexts from symmetric ciphertexts (C)
+	// Scales up the symmetric ciphertext into FV-ciphertext space (C)
 	plaintexts := fvScaleUpSymCipher(logger, flClient, rubatoParams, hheComponents)
 
-	// Process each output size and generate CKKS ciphertexts
-	processCiphertexts(logger, rootPath, flClient, rubatoParams, hheComponents, fvKeyStreams, plaintexts)
+	// Transciphers the symmetric ciphertext into CKKS ciphertext (M)
+	transciphering(logger, rootPath, flClient, rubatoParams, hheComponents, fvKeyStreams, plaintexts)
 }
 
 // generateKeystreams evaluates the keystreams and performs linear transformation
@@ -92,7 +94,7 @@ func generateKeystreams(
 	symKeyFVCiphertext []*RtF.Ciphertext,
 ) []*RtF.Ciphertext {
 	// Evaluate keystreams
-	logger.PrintHeader("[Server - Offline] Evaluates the keystreams (Eval^{FV}) to produce V")
+	logger.PrintMessage("[Server - Offline] Evaluates the keystreams (Eval^{FV}) to produce V")
 	t := time.Now()
 	fvKeyStreams := rubato.CryptNoModSwitch(
 		flClient.Nonces,
@@ -103,7 +105,7 @@ func generateKeystreams(
 	logger.PrintFormatted("Keystreams dimension: [%d]", len(fvKeyStreams))
 
 	// Perform linear transformation
-	logger.PrintHeader("[Server - Offline] Performs linear transformation SlotToCoeffs^{FV} to produce Z")
+	logger.PrintMessage("[Server - Offline] Performs linear transformation SlotToCoeffs^{FV} to produce Z")
 	t = time.Now()
 	for i := range rubatoParams.OutputSize {
 		fvKeyStreams[i] = hheComponents.FvEvaluator.SlotsToCoeffs(fvKeyStreams[i], rubatoParams.StcModDown)
@@ -121,7 +123,7 @@ func fvScaleUpSymCipher(
 	rubatoParams *keys_dealer.RubatoParams,
 	hheComponents *keys_dealer.HHEComponents,
 ) []*RtF.Plaintext {
-	logger.PrintHeader("[Server - Online] Scale up the symmetric ciphertext (Scale{FV}) into FV-ciphretext space (produce C)")
+	logger.PrintMessage("[Server - Online] Scale up the symmetric ciphertext (Scale{FV}) into FV-ciphretext space (produce C)")
 	plainCKKSRingTs := flClient.SymmCipher
 	t := time.Now()
 	plaintexts := make([]*RtF.Plaintext, rubatoParams.OutputSize)
@@ -134,8 +136,8 @@ func fvScaleUpSymCipher(
 	return plaintexts
 }
 
-// processCiphertexts handles the transciphering of symmetric ciphertext into CKKS ciphertext (M)
-func processCiphertexts(
+// transciphering handles the transciphering of symmetric ciphertext into CKKS ciphertext (M)
+func transciphering(
 	logger utils.Logger,
 	rootPath string,
 	flClient *client.FLClient,
@@ -144,7 +146,7 @@ func processCiphertexts(
 	fvKeyStreams []*RtF.Ciphertext,
 	plaintexts []*RtF.Plaintext,
 ) {
-	logger.PrintHeader("[Server - Online] Transciphering the symmetric ciphertext into CKKS ciphertext (produce M)")
+	logger.PrintMessage("[Server - Online] Transciphering the symmetric ciphertext into CKKS ciphertext (produce M)")
 
 	for s := range rubatoParams.OutputSize {
 		ciphertext := createInitialCiphertext(rubatoParams, plaintexts, s)
@@ -161,12 +163,13 @@ func processCiphertexts(
 		valuesWant := generateDebugValues(flClient, rubatoParams, s)
 
 		// Print debug information
-		printString := fmt.Sprintf("Precision of HalfBoot(ciphertext[%d])", s)
-		logger.PrintHeader(printString)
+		printString := fmt.Sprintf("Precision of HalfBoot(ciphertext[%d]): ", s)
+		logger.PrintMessage(printString)
 		PrintDebug(logger, rubatoParams.Params, ctBoot, valuesWant, hheComponents.CkksDecryptor, hheComponents.CkksEncoder)
 
 		// Save the ciphertext
-		cipherDir := filepath.Join(rootPath, configs.Ciphertexts, flClient.ClientID)
+		cipherDir := filepath.Join(rootPath, configs.HEEncryptedWeights, flClient.ClientID)
+		os.MkdirAll(cipherDir, 0755)
 		SaveCipher(logger, s, cipherDir, ctBoot)
 	}
 }
@@ -212,13 +215,13 @@ func heFedAvg(
 	rubatoParams *keys_dealer.RubatoParams,
 	hheComponents *keys_dealer.HHEComponents,
 ) {
-	logger.PrintHeader("[Server - Online] HEFedAvg")
+	logger.PrintMessage("[Server - Online] HEFedAvg")
 
 	// Load the ciphertexts
 	ciphertexts := make([][]*RtF.Ciphertext, len(flClients))
 	for i := range flClients {
 		ciphertexts[i] = make([]*RtF.Ciphertext, rubatoParams.OutputSize)
-		cipherDir := filepath.Join(rootPath, configs.Ciphertexts, flClients[i].ClientID)
+		cipherDir := filepath.Join(rootPath, configs.HEEncryptedWeights, flClients[i].ClientID)
 		for j := range rubatoParams.OutputSize {
 			ciphertexts[i][j] = LoadCipher(logger, j, cipherDir, rubatoParams.Params)
 		}
@@ -239,14 +242,14 @@ func heFedAvg(
 	logger.PrintFormatted("AvgCiphertexts: %+v", avgCiphertexts)
 
 	// Save the average ciphertexts
-	avgCiphertextsDir := filepath.Join(rootPath, configs.Ciphertexts, "avg")
+	avgCiphertextsDir := filepath.Join(rootPath, configs.HEEncryptedWeights, "avg")
 	os.MkdirAll(avgCiphertextsDir, 0755)
 	for i := range rubatoParams.OutputSize {
 		SaveCipher(logger, i, avgCiphertextsDir, avgCiphertexts[i])
 	}
 	logger.PrintFormatted("AvgCiphertexts saved to %s", avgCiphertextsDir)
 
-	logger.PrintHeader("[Server - Online] HEFedAvg done")
+	logger.PrintMessage("[Server - Online] HEFedAvg done")
 }
 
 // generateDebugValues creates values for debugging and precision checking
@@ -295,7 +298,7 @@ func PrintDebug(
 	decryptor RtF.CKKSDecryptor,
 	encoder RtF.CKKSEncoder) {
 	if utils.DEBUG {
-		logger.PrintHeader("--- Print Debug ---")
+		logger.PrintMessage("--- Print Debug ---")
 		valuesTest := encoder.DecodeComplex(decryptor.DecryptNew(ciphertext), params.LogSlots())
 		logger.PrintFormatted("ValuesTest length: %d", len(valuesTest))
 

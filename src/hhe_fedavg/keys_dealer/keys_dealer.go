@@ -47,9 +47,9 @@ func RunKeysDealer(
 	rubato RtF.MFVRubato,
 ) {
 	logger.PrintHeader("--- Keys Dealer ---")
-	logger.PrintHeader("[Keys Dealer] Preparing Common things for all FL Clients")
+	logger.PrintMessage("[Keys Dealer] Preparing Common things for all FL Clients")
 	logger.PrintFormatted("Root Path: %s", rootPath)
-	logger.PrintFormatted("Parameter Index: %d", paramIndex)
+	logger.PrintFormatted("Using Rubato Parameter Index: %d (%s)", paramIndex, RtF.RubatoParams[paramIndex].Name)
 
 	// Initialize Rubato parameters
 	rubatoParams = InitRubatoParams(logger, paramIndex)
@@ -86,16 +86,16 @@ func RunKeysDealer(
 	if err != nil {
 		utils.HandleError(err)
 	}
-	logger.PrintFormatted("Symmetric Key: %+v", symKey)
-	logger.PrintFormatted("FV encrypted symmetric key: %+v", symKeyFVCiphertext)
+	logger.PrintFormatted("Symmetric Key: %+T, len = %d", symKey, len(symKey))
+	logger.PrintFormatted("FV encrypted symmetric key: %+T, len = %d", symKeyFVCiphertext, len(symKeyFVCiphertext))
 
 	return rubatoParams, hheComponents, rubato
 }
 
 func InitRubatoParams(logger utils.Logger, paramIndex int) *RubatoParams {
-	logger.PrintHeader("[Keys Dealer] Rubato parameters")
+	logger.PrintMessage("[Keys Dealer] Rubato parameters")
 	blockSize := RtF.RubatoParams[paramIndex].Blocksize
-	outputSize := 3 // originally: outputSize := blockSize - 4
+	outputSize := 2 // originally: outputSize := blockSize - 4
 	numRound := RtF.RubatoParams[paramIndex].NumRound
 	plainModulus := RtF.RubatoParams[paramIndex].PlainModulus
 	sigma := RtF.RubatoParams[paramIndex].Sigma
@@ -143,7 +143,7 @@ func HHEKeysGen(
 	params *RtF.Parameters,
 	hbtParams *RtF.HalfBootParameters,
 ) {
-	logger.PrintHeader("[Keys Dealer] HHE keys generation")
+	logger.PrintMessage("[Keys Dealer] HHE keys generation")
 
 	var err error
 
@@ -216,9 +216,9 @@ func InitHHEScheme(
 	keysDir string,
 	params *RtF.Parameters,
 	hbtpParams *RtF.HalfBootParameters) *HHEComponents {
-	logger.PrintHeader("[Keys Dealer] Initializing HHE Scheme")
+	logger.PrintMessage("[Keys Dealer] Initializing HHE Scheme")
 
-	logger.PrintHeader("Reading the keys and public parameters from storage and setup the scheme")
+	logger.PrintMessage("Reading the keys and public parameters from storage and setup the scheme")
 	t := time.Now()
 	var err error
 
@@ -285,7 +285,7 @@ func SymmetricKeyGen(
 	blockSize int,
 	params *RtF.Parameters,
 	rubato RtF.MFVRubato) (key []uint64, kCt []*RtF.Ciphertext, err error) {
-	logger.PrintHeader("[Keys Dealer] Generating / Loading Symmetric Keys")
+	logger.PrintMessage("[Keys Dealer] Generating / Loading Symmetric Keys")
 
 	symKeyPath := filepath.Join(keysDir, configs.SymmetricKey)
 	symCipherDir := filepath.Join(keysDir, configs.SymmetricKeyCipherDir)
