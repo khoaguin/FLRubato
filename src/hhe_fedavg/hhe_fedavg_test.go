@@ -13,7 +13,14 @@ import (
 	"testing"
 )
 
-func loadDecryptCompare(logger utils.Logger, rootPath string, weightIndex int) {
+func loadDecryptCompare(
+	logger utils.Logger,
+	rootPath string,
+	weightIndex int,
+	rubatoParams *keys_dealer.RubatoParams,
+	hheComponents *keys_dealer.HHEComponents,
+) {
+	logger.PrintHeader(fmt.Sprintf("Testing avgFC%d", weightIndex))
 	// Paths
 	plaintextAvgWeightsDir := filepath.Join(rootPath, configs.PlaintextWeights)
 	logger.PrintFormatted("Plaintext avg weights dir: %s", plaintextAvgWeightsDir)
@@ -23,19 +30,15 @@ func loadDecryptCompare(logger utils.Logger, rootPath string, weightIndex int) {
 	plaintextAvgWeights := utils.LoadFromJSON(logger, plaintextAvgWeightsDir, fmt.Sprintf("plaintext_avg_fc%d.json", weightIndex))
 	logger.PrintFormatted("Plaintext avg weights type: %T and length: %d", plaintextAvgWeights, len(plaintextAvgWeights))
 
-	paramIndex := RtF.RUBATO128L
-	rubatoParams, hheComponents, _ := keys_dealer.RunKeysDealer(logger, rootPath, paramIndex)
-
 	logger.PrintFormatted("Rubato params num slots: %d", rubatoParams.Params.Slots())
 
-	logger.PrintHeader("Generating the plaintext values in complex128")
 	plaintextAvgWeightsComplex := make([]complex128, rubatoParams.Params.Slots())
 	for i := range len(plaintextAvgWeights) {
 		plaintextAvgWeightsComplex[i] = complex(plaintextAvgWeights[i], 0)
 	}
 
 	// Load and decrypt the heAvgWeights
-	logger.PrintHeader("Decrypting the ciphertexts")
+	logger.PrintMessage("--- Decrypting the ciphertexts ---")
 	heAvgWeights := server.LoadCipher(logger, weightIndex-1, avgCiphertextsDir, rubatoParams.Params)
 
 	ckksEncoder := hheComponents.CkksEncoder
@@ -44,7 +47,7 @@ func loadDecryptCompare(logger utils.Logger, rootPath string, weightIndex int) {
 	logger.PrintFormatted("Decrypted avg weights type: %T and length: %d", decryptedAvgWeights, len(decryptedAvgWeights))
 
 	// Calculate the error
-	logger.PrintHeader("Calculating the error")
+	logger.PrintMessage("--- Calculating the error ---")
 	logSlots := rubatoParams.Params.LogSlots()
 	sigma := rubatoParams.Params.Sigma()
 
@@ -90,6 +93,9 @@ func TestHHEFedAvg(t *testing.T) {
 	logger := utils.NewLogger(utils.DEBUG)
 	rootPath := FLRubato.FindRootPath()
 
-	loadDecryptCompare(logger, rootPath, 1) // test avgFC1
-	loadDecryptCompare(logger, rootPath, 2) // test avgFC2
+	paramIndex := RtF.RUBATO128L
+	rubatoParams, hheComponents, _ := keys_dealer.RunKeysDealer(logger, rootPath, paramIndex)
+
+	loadDecryptCompare(logger, rootPath, 1, rubatoParams, hheComponents) // test avgFC1
+	loadDecryptCompare(logger, rootPath, 2, rubatoParams, hheComponents) // test avgFC2
 }
