@@ -49,18 +49,13 @@ import (
 		|->	evaluations. Keep in mind that one can also store this ciphertext to avoid the repeat of
 		|-> the heavy computation for transciphering.
 */
-//================= The End xD =================//
+//================= How Rubato Works End =================//
 func main() {
-	logger := utils.NewLogger(utils.DEBUG)
-	t := time.Now()
-	RunFLHHE()
-	logger.PrintRunningTime("Total time to run the program", t)
-}
-
-func RunFLHHE() {
 	logger := utils.NewLogger(utils.DEBUG)
 	rootPath := FLRubato.FindRootPath()
 	paramIndex := RtF.RUBATO128L
+
+	t := time.Now()
 
 	rubatoParams, hheComponents, rubato := keys_dealer.RunKeysDealer(logger, rootPath, paramIndex)
 	logger.PrintFormatted("Rubato Parameters: %+v", rubatoParams)
@@ -68,8 +63,10 @@ func RunFLHHE() {
 	logger.PrintFormatted("Rubato Instance Addr: %+v", &rubato)
 
 	flClients := make([]*client.FLClient, 3)
-	flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_137.json", "client1")
-	flClients[1] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_258.json", "client2")
-	flClients[2] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "mnist_weights_exclude_469.json", "client3")
+	flClients[0] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "weights_no_137.json", "do1")
+	flClients[1] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "weights_no_258.json", "do2")
+	flClients[2] = client.RunFLClient(logger, rootPath, rubatoParams, hheComponents, "weights_no_469.json", "do3")
 	server.RunFLServer(logger, rootPath, flClients, rubatoParams, hheComponents, rubato)
+
+	logger.PrintRunningTime("Total time to run the program", t)
 }

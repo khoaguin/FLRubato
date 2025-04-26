@@ -14,7 +14,8 @@ import (
 // DEBUG for turning debug logs on/off
 const DEBUG = true
 const MeMStat = true
-const PREFIX = "->> "
+const PREFIX = ""
+const LONG_PREFIX = "->> "
 
 type logger struct {
 	debug bool
@@ -58,7 +59,7 @@ func (l logger) PrintMessages(messages ...interface{}) {
 
 func (l logger) PrintFormatted(format string, args ...interface{}) {
 	if l.debug {
-		fmt.Print(PREFIX)
+		fmt.Print(LONG_PREFIX)
 		fmt.Printf(format, args...)
 		fmt.Println()
 	}
@@ -66,7 +67,7 @@ func (l logger) PrintFormatted(format string, args ...interface{}) {
 
 func (l logger) PrintDataLen(data []uint64) {
 	if l.debug {
-		fmt.Print(PREFIX)
+		fmt.Print(LONG_PREFIX)
 		fmt.Printf("Len: %d, Data: %d", len(data), data)
 		fmt.Println()
 	}

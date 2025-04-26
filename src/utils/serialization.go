@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 func Serialize(object any, path string) (err error) {
@@ -77,4 +78,25 @@ func UnMarshalJSON(data []byte) (object any, err error) {
 	} else {
 		return object, nil
 	}
+}
+
+func LoadFromJSON(logger Logger, weightDir string, filename string) []float64 {
+	// Open the file
+	fileName := filepath.Join(weightDir, filename)
+	file, err := os.Open(fileName)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	// Create a decoder and read the data
+	var data []float64
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&data)
+	if err != nil {
+		panic(err)
+	}
+	logger.PrintFormatted("Loaded data from %s", fileName)
+
+	return data
 }

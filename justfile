@@ -7,7 +7,6 @@
 # - Don't over-engineer, keep it simple.
 # - Don't break existing commands
 # - Run just --fmt --unstable after adding new commands
-
 # ---------------------------------------------------------------------------------------------------------------------
 # Define color codes for terminal output in a Justfile
 _red := '\033[1;31m'
@@ -18,9 +17,7 @@ _nc := '\033[0m'
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Aliases
-
 # alias t := test
-
 # ---------------------------------------------------------------------------------------------------------------------
 # Commands
 
@@ -28,38 +25,50 @@ _nc := '\033[0m'
     just --list
 
 # ---------------------------------------------------------------------------------------------------------------------
-[group('run')]
-run:
-    go run src/main.go
+[group('reset')]
+reset-hhe:
+    rm -rf logs/
+    rm -rf weights/MNIST/symmetric_encrypted/
+    rm -rf weights/MNIST/he_encrypted/
 
+reset-all:
+    rm -rf logs/
+    rm -rf weights/MNIST/symmetric_encrypted/
+    rm -rf weights/MNIST/he_encrypted/
+    rm -rf weights/MNIST/plain/
+
+# ---------------------------------------------------------------------------------------------------------------------
+[group('venv')]
+setup-venv:
+    uv venv
+    source .venv/bin/activate
+    uv sync
+
+# ---------------------------------------------------------------------------------------------------------------------
+[group('data')]
+prepare-data: setup-venv
+    uv run src/model_training/dataset.py
+
+# ---------------------------------------------------------------------------------------------------------------------
+[group('train')]
+train-models: setup-venv
+    uv run src/model_training/train.py
+
+# ---------------------------------------------------------------------------------------------------------------------
+[group('he')]
+run-he:
+    go run src/he_fedavg/he_fedavg.go
+
+# ---------------------------------------------------------------------------------------------------------------------
 [group('hhe')]
 run-hhe:
+    echo "{{ _cyan }}Running HHE FedAvg {{ _nc }}"
     go run src/hhe_fedavg/hhe_fedavg.go
-
-[group('hhe')]
-build-hhe:
-    go build -o /dev/null src/hhe_fedavg/hhe_fedavg.go
-
-[group('hhe')]
-lint-hhe:
-    # cd src/hhe_fedavg && golangci-lint run
-    go vet src/hhe_fedavg/hhe_fedavg.go
-
+    echo "{{ _green }}HHE FedAvg completed {{ _nc }}"
 
 # ---------------------------------------------------------------------------------------------------------------------
 [group('test')]
-test:
-    cd Rubato-server/ckks_fv
-    go test -timeout=0s -bench=BenchmarkRtFRubato
-
-
-# ---------------------------------------------------------------------------------------------------------------------
-[group('reset')]
-reset:
-    just reset-ciphertexts
-
-# Clean all directories in ciphertexts/ but preserve Ciphertexts.go file
-[group('reset')]
-reset-ciphertexts:
-    find ciphertexts/ -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} \;
-
+test-hhe:
+    echo "{{ _cyan }}Running end-to-end tests {{ _nc }}"
+    go test src/hhe_fedavg/hhe_fedavg_test.go -v
+    echo "{{ _green }}Test execution completed {{ _nc }}"
