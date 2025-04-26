@@ -25,6 +25,19 @@ _nc := '\033[0m'
     just --list
 
 # ---------------------------------------------------------------------------------------------------------------------
+[group('reset')]
+reset-hhe:
+    rm -rf logs/
+    rm -rf weights/MNIST/symmetric_encrypted/
+    rm -rf weights/MNIST/he_encrypted/
+
+reset-all:
+    rm -rf logs/
+    rm -rf weights/MNIST/symmetric_encrypted/
+    rm -rf weights/MNIST/he_encrypted/
+    rm -rf weights/MNIST/plain/
+
+# ---------------------------------------------------------------------------------------------------------------------
 [group('venv')]
 setup-venv:
     uv venv
@@ -35,7 +48,6 @@ setup-venv:
 [group('data')]
 prepare-data: setup-venv
     uv run src/model_training/dataset.py
-
 
 # ---------------------------------------------------------------------------------------------------------------------
 [group('train')]
@@ -60,10 +72,3 @@ test-hhe:
     echo "{{ _cyan }}Running end-to-end tests {{ _nc }}"
     go test src/hhe_fedavg/hhe_fedavg_test.go -v
     echo "{{ _green }}Test execution completed {{ _nc }}"
-
-# ---------------------------------------------------------------------------------------------------------------------
-[group('reset')]
-reset:
-    rm -rf logs/
-    rm -rf weights/MNIST/symmetric_encrypted/
-    rm -rf weights/MNIST/he_encrypted/
