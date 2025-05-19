@@ -62,8 +62,8 @@ func RunHEFedAvg() {
 	logger.PrintFormatted("Comparing encrypted and plaintext calculations, error = : %f", diff)
 
 	// Save the plaintext and decrypted averages to JSON files
-	saveToJSON(logger, weightDir, "plaintext_avg_fc1.json", plaintextAvgFC1)
-	saveToJSON(logger, weightDir, "plaintext_avg_fc2.json", plaintextAvgFC2)
+	saveToJSON(logger, weightDir, "he_decrypted_avg_fc1.json", decryptedAvgFC1)
+	saveToJSON(logger, weightDir, "he_decrypted_avg_fc2.json", decryptedAvgFC2)
 }
 
 func keysDealerCKKSParams(

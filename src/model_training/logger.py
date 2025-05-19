@@ -20,7 +20,9 @@ def setup_logger(
 
     # new file per run - no rotation needed
     # always log debug level
-    log_file = Path(log_dir, f"flhhe_{int(datetime.now().timestamp())}.log")
+    log_file = Path(
+        log_dir, f"flhhe_local_training_python_{int(datetime.now().timestamp())}.log"
+    )
     logger.add(
         log_file,
         level="DEBUG",

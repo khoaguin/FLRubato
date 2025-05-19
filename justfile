@@ -27,20 +27,26 @@ _nc := '\033[0m'
 # ---------------------------------------------------------------------------------------------------------------------
 [group('reset')]
 reset-hhe:
+    rm -rf **/__pycache__/
     rm -rf logs/
     rm -rf weights/MNIST/symmetric_encrypted/
     rm -rf weights/MNIST/he_encrypted/
 
 reset-all:
+    rm -rf **/__pycache__/
     rm -rf logs/
     rm -rf weights/MNIST/symmetric_encrypted/
     rm -rf weights/MNIST/he_encrypted/
     rm -rf weights/MNIST/plain/
 
+### Python
 # ---------------------------------------------------------------------------------------------------------------------
 [group('venv')]
 setup-venv:
-    uv venv
+    #!/bin/bash
+    if [ ! -d ".venv" ]; then
+        uv venv
+    fi
     source .venv/bin/activate
     uv sync
 
@@ -51,9 +57,16 @@ prepare-data: setup-venv
 
 # ---------------------------------------------------------------------------------------------------------------------
 [group('train')]
+train-models-save-weights: setup-venv
+    uv run src/model_training/train.py --save-weights
+
 train-models: setup-venv
     uv run src/model_training/train.py
 
+fed-avg: setup-venv
+    uv run src/model_training/fed_avg.py
+
+### Go
 # ---------------------------------------------------------------------------------------------------------------------
 [group('he')]
 run-he:
