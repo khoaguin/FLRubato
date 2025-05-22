@@ -52,23 +52,53 @@ setup-venv:
     source .venv/bin/activate
 
 # ---------------------------------------------------------------------------------------------------------------------
-[group('mnist')]
+[group('mnist-python')]
 prepare-mnist-data:
     uv run src/flhhe/mnist/dataset.py
 
-[group('mnist')]
+[group('mnist-python')]
 train-mnist-model-save-weights:
     uv run -m flhhe.mnist.train --save-weights
 
+[group('mnist-python')]
 train-mnist-model:
     uv run -m flhhe.mnist.train
 
+[group('mnist-python')]
 run-mnist-fed-avg:
     uv run -m flhhe.mnist.fed_avg
 
+[group('mnist-python')]
 run-mnist-fed-avg-he:
     uv run -m flhhe.mnist.fed_avg_he
 
+[group('mnist-python')]
+run-mnist-fed-avg-hhe:
+    uv run -m flhhe.mnist.fed_avg_hhe
+
+
+### Go
+# ---------------------------------------------------------------------------------------------------------------------
+[group('mnist-go')]
+run-he:
+    go run src/he_fedavg/he_fedavg.go
+
+# ---------------------------------------------------------------------------------------------------------------------
+[group('mnist-go')]
+run-hhe:
+    echo "{{ _cyan }}Running HHE FedAvg {{ _nc }}"
+    go run src/hhe_fedavg/hhe_fedavg.go
+    echo "{{ _green }}HHE FedAvg completed {{ _nc }}"
+
+# ---------------------------------------------------------------------------------------------------------------------
+[group('mnist-go')]
+test-hhe:
+    echo "{{ _cyan }}Running end-to-end tests {{ _nc }}"
+    go test src/hhe_fedavg/hhe_fedavg_test.go -v
+    echo "{{ _green }}Test execution completed {{ _nc }}"
+
+# ---------------------------------------------------------------------------------------------------------------------
+[group('mnist')]
 run-mnist-e2e:
     just prepare-mnist-data
     just train-mnist-model-save-weights
@@ -79,23 +109,3 @@ run-mnist-e2e:
     just run-hhe
     just test-hhe
     just run-mnist-fed-avg-hhe
-
-### Go
-# ---------------------------------------------------------------------------------------------------------------------
-[group('he')]
-run-he:
-    go run src/he_fedavg/he_fedavg.go
-
-# ---------------------------------------------------------------------------------------------------------------------
-[group('hhe')]
-run-hhe:
-    echo "{{ _cyan }}Running HHE FedAvg {{ _nc }}"
-    go run src/hhe_fedavg/hhe_fedavg.go
-    echo "{{ _green }}HHE FedAvg completed {{ _nc }}"
-
-# ---------------------------------------------------------------------------------------------------------------------
-[group('test')]
-test-hhe:
-    echo "{{ _cyan }}Running end-to-end tests {{ _nc }}"
-    go test src/hhe_fedavg/hhe_fedavg_test.go -v
-    echo "{{ _green }}Test execution completed {{ _nc }}"

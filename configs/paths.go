@@ -3,6 +3,7 @@ package configs
 // paths to plaintext and encrypted weights
 const Configs = "configs/"
 const PlaintextWeights = "weights/mnist/plain"
+const DecryptedWeights = "weights/mnist/decrypted"
 const SymmetricEncryptedWeights = "weights/mnist/symmetric_encrypted"
 const HEEncryptedWeights = "weights/mnist/he_encrypted"
 

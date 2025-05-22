@@ -15,8 +15,8 @@ def main():
     WEIGHTS_DIR.mkdir(parents=True, exist_ok=True)
 
     # List your weight files here
-    fc1_path = WEIGHTS_DIR / "he_decrypted_avg_fc1.json"
-    fc2_path = WEIGHTS_DIR / "he_decrypted_avg_fc2.json"
+    fc1_path = WEIGHTS_DIR / "hhe_decrypted_avg_fc1.json"
+    fc2_path = WEIGHTS_DIR / "hhe_decrypted_avg_fc2.json"
 
     logger.info(f"Loading fc1 from: {fc1_path}")
     logger.info(f"Loading fc2 from: {fc2_path}")
@@ -27,13 +27,15 @@ def main():
     # Load and reshape fc1 weights (should be HIDDEN_SIZE x INPUT_SIZE = 32 x 784)
     with open(fc1_path, "r") as f:
         weight_data = json.load(f)
-        fc1_weights = torch.tensor(weight_data).reshape(HIDDEN_SIZE, INPUT_SIZE)
+        fc1_weights = torch.tensor(weight_data)[: HIDDEN_SIZE * INPUT_SIZE]
+        fc1_weights = fc1_weights.reshape(HIDDEN_SIZE, INPUT_SIZE)
         avg_model.fc1.weight.data = fc1_weights
 
     # Load and reshape fc2 weights (should be OUTPUT_SIZE x HIDDEN_SIZE = 10 x 32)
     with open(fc2_path, "r") as f:
         weight_data = json.load(f)
-        fc2_weights = torch.tensor(weight_data).reshape(OUTPUT_SIZE, HIDDEN_SIZE)
+        fc2_weights = torch.tensor(weight_data)[: OUTPUT_SIZE * HIDDEN_SIZE]
+        fc2_weights = fc2_weights.reshape(OUTPUT_SIZE, HIDDEN_SIZE)
         avg_model.fc2.weight.data = fc2_weights
 
     # Evaluate on all test sets

@@ -22,23 +22,23 @@ func loadDecryptCompare(
 ) {
 	logger.PrintHeader(fmt.Sprintf("Testing avgFC%d", weightIndex))
 	// Paths
-	plaintextAvgWeightsDir := filepath.Join(rootPath, configs.PlaintextWeights)
-	logger.PrintFormatted("Plaintext avg weights dir: %s", plaintextAvgWeightsDir)
+	plainHEDecryptedAvgWeightsDir := filepath.Join(rootPath, configs.DecryptedWeights)
+	logger.PrintFormatted("Plain HE Decrypted avg weights dir: %s", plainHEDecryptedAvgWeightsDir)
 	avgCiphertextsDir := filepath.Join(rootPath, configs.HEEncryptedWeights, "avg")
-	logger.PrintFormatted("Avg ciphertexts dir: %s", avgCiphertextsDir)
+	logger.PrintFormatted("Avg ciphertexts dir (from the HHE protocol): %s", avgCiphertextsDir)
 
-	plaintextAvgWeights := utils.LoadFromJSON(logger, plaintextAvgWeightsDir, fmt.Sprintf("plaintext_avg_fc%d.json", weightIndex))
-	logger.PrintFormatted("Plaintext avg weights type: %T and length: %d", plaintextAvgWeights, len(plaintextAvgWeights))
+	plainHEDecryptedAvgWeights := utils.LoadFromJSON(logger, plainHEDecryptedAvgWeightsDir, fmt.Sprintf("he_decrypted_avg_fc%d.json", weightIndex))
+	logger.PrintFormatted("Plaintext avg weights type: %T and length: %d", plainHEDecryptedAvgWeights, len(plainHEDecryptedAvgWeights))
 
 	logger.PrintFormatted("Rubato params num slots: %d", rubatoParams.Params.Slots())
 
-	plaintextAvgWeightsComplex := make([]complex128, rubatoParams.Params.Slots())
-	for i := range len(plaintextAvgWeights) {
-		plaintextAvgWeightsComplex[i] = complex(plaintextAvgWeights[i], 0)
+	plainHEDecryptedAvgWeightsComplex := make([]complex128, rubatoParams.Params.Slots())
+	for i := range len(plainHEDecryptedAvgWeights) {
+		plainHEDecryptedAvgWeightsComplex[i] = complex(plainHEDecryptedAvgWeights[i], 0)
 	}
 
 	// Load and decrypt the heAvgWeights
-	logger.PrintMessage("--- Decrypting the ciphertexts ---")
+	logger.PrintMessage("--- Decrypting the HE ciphertexts of the avg weights from the HHE protocol ---")
 	heAvgWeights := server.LoadCipher(logger, weightIndex-1, avgCiphertextsDir, rubatoParams.Params)
 
 	ckksEncoder := hheComponents.CkksEncoder
@@ -56,9 +56,9 @@ func loadDecryptCompare(
 	logger.PrintFormatted("decryptedAvgWeights{%d}: [%6.10f %6.10f %6.10f %6.10f...]",
 		len(decryptedAvgWeights), decryptedAvgWeights[0], decryptedAvgWeights[1], decryptedAvgWeights[2], decryptedAvgWeights[3])
 	logger.PrintFormatted("plaintextAvgWeights{%d}: [%6.10f %6.10f %6.10f %6.10f...]",
-		len(plaintextAvgWeightsComplex), plaintextAvgWeightsComplex[0], plaintextAvgWeightsComplex[1], plaintextAvgWeightsComplex[2], plaintextAvgWeightsComplex[3])
+		len(plainHEDecryptedAvgWeightsComplex), plainHEDecryptedAvgWeightsComplex[0], plainHEDecryptedAvgWeightsComplex[1], plainHEDecryptedAvgWeightsComplex[2], plainHEDecryptedAvgWeightsComplex[3])
 
-	precisionStats := RtF.GetPrecisionStats(rubatoParams.Params, ckksEncoder, nil, plaintextAvgWeightsComplex, decryptedAvgWeights, logSlots, sigma)
+	precisionStats := RtF.GetPrecisionStats(rubatoParams.Params, ckksEncoder, nil, plainHEDecryptedAvgWeightsComplex, decryptedAvgWeights, logSlots, sigma)
 	fmt.Println(precisionStats.String())
 
 	// Assert that precision values are in good range
@@ -87,6 +87,8 @@ func loadDecryptCompare(
 		panic(fmt.Sprintf("Error stdT too high: got %.2f, want at most %.2f",
 			math.Log2(precisionStats.STDTime), errStdTThreshold))
 	}
+
+	utils.SaveComplexToJSON(logger, plainHEDecryptedAvgWeightsDir, fmt.Sprintf("hhe_decrypted_avg_fc%d.json", weightIndex), decryptedAvgWeights)
 }
 
 func TestHHEFedAvg(t *testing.T) {
