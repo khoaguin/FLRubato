@@ -1,8 +1,4 @@
 import torch
-from pathlib import Path
-
-
-PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 def get_device():
@@ -14,6 +10,3 @@ def get_device():
         return torch.device("xpu")
     else:
         return torch.device("cpu")
-
-
-DEVICE = get_device()

@@ -46,25 +46,39 @@ setup-venv:
     #!/bin/bash
     if [ ! -d ".venv" ]; then
         uv venv
+        source .venv/bin/activate
+        uv sync && uv pip install -e .
     fi
     source .venv/bin/activate
-    uv sync
 
 # ---------------------------------------------------------------------------------------------------------------------
-[group('data')]
-prepare-data: setup-venv
-    uv run src/model_training/dataset.py
+[group('mnist')]
+prepare-mnist-data:
+    uv run src/flhhe/mnist/dataset.py
 
-# ---------------------------------------------------------------------------------------------------------------------
-[group('train')]
-train-models-save-weights: setup-venv
-    uv run src/model_training/train.py --save-weights
+[group('mnist')]
+train-mnist-model-save-weights:
+    uv run -m flhhe.mnist.train --save-weights
 
-train-models: setup-venv
-    uv run src/model_training/train.py
+train-mnist-model:
+    uv run -m flhhe.mnist.train
 
-fed-avg: setup-venv
-    uv run src/model_training/fed_avg.py
+run-mnist-fed-avg:
+    uv run -m flhhe.mnist.fed_avg
+
+run-mnist-fed-avg-he:
+    uv run -m flhhe.mnist.fed_avg_he
+
+run-mnist-e2e:
+    just prepare-mnist-data
+    just train-mnist-model-save-weights
+    just run-mnist-fed-avg
+    just run-he
+    just run-mnist-fed-avg-he
+
+    just run-hhe
+    just test-hhe
+    just run-mnist-fed-avg-hhe
 
 ### Go
 # ---------------------------------------------------------------------------------------------------------------------

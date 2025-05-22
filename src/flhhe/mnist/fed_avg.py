@@ -1,7 +1,11 @@
 from pathlib import Path
-from eval import evaluate_model
-from model import load_simple_mnist_model_from_json, save_simple_mnist_model_to_json
-from utils import PROJECT_ROOT
+
+from flhhe.mnist.eval import evaluate_model
+from flhhe.mnist.model import (
+    load_simple_mnist_model_from_json,
+    save_simple_mnist_model_to_json,
+)
+from flhhe.consts import PROJECT_ROOT
 
 
 WEIGHTS_DIR = PROJECT_ROOT / "weights/MNIST/plain"
@@ -24,10 +28,10 @@ def fed_avg(weight_paths: list[Path]) -> None:
 
     save_simple_mnist_model_to_json(avg_model, WEIGHTS_DIR / "plaintext_avg.json")
 
-    evaluate_model(WEIGHTS_DIR / "plaintext_avg.json", TEST_SET_PATH / "test_all.pt")
-    evaluate_model(WEIGHTS_DIR / "plaintext_avg.json", TEST_SET_PATH / "test_137.pt")
-    evaluate_model(WEIGHTS_DIR / "plaintext_avg.json", TEST_SET_PATH / "test_258.pt")
-    evaluate_model(WEIGHTS_DIR / "plaintext_avg.json", TEST_SET_PATH / "test_469.pt")
+    evaluate_model(avg_model, TEST_SET_PATH / "test_all.pt")
+    evaluate_model(avg_model, TEST_SET_PATH / "test_137.pt")
+    evaluate_model(avg_model, TEST_SET_PATH / "test_258.pt")
+    evaluate_model(avg_model, TEST_SET_PATH / "test_469.pt")
 
 
 if __name__ == "__main__":

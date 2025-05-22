@@ -5,15 +5,16 @@ from loguru import logger
 import argparse
 
 
-from model import (
+from flhhe.mnist.model import (
     SimpleMNISTModel,
     save_simple_mnist_model_to_json,
     load_simple_mnist_model_from_json,
 )
-from dataset import load_dataset
-from eval import evaluate_model
-from logger import setup_logger
-from utils import DEVICE, PROJECT_ROOT
+from flhhe.mnist.dataset import load_dataset
+from flhhe.mnist.eval import evaluate_model
+from flhhe.mnist.logger import setup_logger
+
+from flhhe.consts import DEVICE, PROJECT_ROOT
 
 
 NUM_LOCAL_EPOCHS = 1
@@ -98,7 +99,7 @@ def train_eval_models():
             model, train_set_path, weights_path, save_weights=args.save_weights
         )
         for test_set_path in test_set_parts:
-            evaluate_model(weights_path, test_set_path)
+            evaluate_model(model, test_set_path)
 
 
 if __name__ == "__main__":

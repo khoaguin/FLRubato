@@ -6,7 +6,7 @@ from typing import Union
 import loguru
 from loguru import logger
 
-DEFAULT_LOGS_DIR = Path(__file__).parent.parent.parent / "logs"
+DEFAULT_LOGS_DIR = Path(__file__).parent.parent.parent.parent / "logs"
 LOGS_FORMAT = loguru
 
 
