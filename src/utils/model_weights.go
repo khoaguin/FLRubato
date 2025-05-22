@@ -66,3 +66,34 @@ func OpenModelWeights(logger Logger, root string, weightFile string) ModelWeight
 
 	return weights
 }
+
+// SaveToJSON saves a slice of float64 values to a JSON file
+func SaveToJSON(logger Logger, weightDir string, filename string, data []float64) {
+	// Create a file
+	fileName := filepath.Join(weightDir, filename)
+	file, err := os.Create(fileName)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	// Create an encoder and write the data
+	encoder := json.NewEncoder(file)
+	err = encoder.Encode(data)
+	if err != nil {
+		panic(err)
+	}
+	logger.PrintFormatted("Saved data to %s", fileName)
+}
+
+// SaveComplexToJSON saves a slice of complex128 values to a JSON file
+func SaveComplexToJSON(logger Logger, weightDir string, filename string, data []complex128) {
+	// Convert complex128 to float64 by taking the real part
+	floatData := make([]float64, len(data))
+	for i, val := range data {
+		floatData[i] = real(val)
+	}
+
+	// Use existing saveToJSON function to save the float64 data
+	SaveToJSON(logger, weightDir, filename, floatData)
+}

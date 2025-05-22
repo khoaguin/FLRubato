@@ -50,8 +50,8 @@ def save_simple_mnist_model_to_json(
     model: SimpleMNISTModel, weights_path: Path
 ) -> None:
     # Extract weights and convert to nested Python list
-    fc1 = model.fc1.weight.data.numpy()
-    fc2 = model.fc2.weight.data.numpy()
+    fc1 = model.fc1.weight.data.cpu().numpy()
+    fc2 = model.fc2.weight.data.cpu().numpy()
 
     logger.info(f"fc1 shape: {fc1.shape}")
     logger.info(f"fc2 shape: {fc2.shape}")

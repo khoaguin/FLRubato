@@ -8,7 +8,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import Subset, Dataset
 
 
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 
 def load_mnist_data(batch_size: int = 64):

@@ -27,48 +27,85 @@ _nc := '\033[0m'
 # ---------------------------------------------------------------------------------------------------------------------
 [group('reset')]
 reset-hhe:
+    rm -rf **/__pycache__/
     rm -rf logs/
     rm -rf weights/MNIST/symmetric_encrypted/
     rm -rf weights/MNIST/he_encrypted/
 
 reset-all:
+    rm -rf **/__pycache__/
     rm -rf logs/
     rm -rf weights/MNIST/symmetric_encrypted/
     rm -rf weights/MNIST/he_encrypted/
     rm -rf weights/MNIST/plain/
 
+### Python
 # ---------------------------------------------------------------------------------------------------------------------
 [group('venv')]
 setup-venv:
-    uv venv
+    #!/bin/bash
+    if [ ! -d ".venv" ]; then
+        uv venv
+        source .venv/bin/activate
+        uv sync && uv pip install -e .
+    fi
     source .venv/bin/activate
-    uv sync
 
 # ---------------------------------------------------------------------------------------------------------------------
-[group('data')]
-prepare-data: setup-venv
-    uv run src/model_training/dataset.py
+[group('mnist-python')]
+prepare-mnist-data:
+    uv run src/flhhe/mnist/dataset.py
 
-# ---------------------------------------------------------------------------------------------------------------------
-[group('train')]
-train-models: setup-venv
-    uv run src/model_training/train.py
+[group('mnist-python')]
+train-mnist-model-save-weights:
+    uv run -m flhhe.mnist.train --save-weights
 
+[group('mnist-python')]
+train-mnist-model:
+    uv run -m flhhe.mnist.train
+
+[group('mnist-python')]
+run-mnist-fed-avg:
+    uv run -m flhhe.mnist.fed_avg
+
+[group('mnist-python')]
+run-mnist-fed-avg-he:
+    uv run -m flhhe.mnist.fed_avg_he
+
+[group('mnist-python')]
+run-mnist-fed-avg-hhe:
+    uv run -m flhhe.mnist.fed_avg_hhe
+
+
+### Go
 # ---------------------------------------------------------------------------------------------------------------------
-[group('he')]
+[group('mnist-go')]
 run-he:
     go run src/he_fedavg/he_fedavg.go
 
 # ---------------------------------------------------------------------------------------------------------------------
-[group('hhe')]
+[group('mnist-go')]
 run-hhe:
     echo "{{ _cyan }}Running HHE FedAvg {{ _nc }}"
     go run src/hhe_fedavg/hhe_fedavg.go
     echo "{{ _green }}HHE FedAvg completed {{ _nc }}"
 
 # ---------------------------------------------------------------------------------------------------------------------
-[group('test')]
+[group('mnist-go')]
 test-hhe:
     echo "{{ _cyan }}Running end-to-end tests {{ _nc }}"
     go test src/hhe_fedavg/hhe_fedavg_test.go -v
     echo "{{ _green }}Test execution completed {{ _nc }}"
+
+# ---------------------------------------------------------------------------------------------------------------------
+[group('mnist')]
+run-mnist-e2e:
+    just prepare-mnist-data
+    just train-mnist-model-save-weights
+    just run-mnist-fed-avg
+    just run-he
+    just run-mnist-fed-avg-he
+
+    just run-hhe
+    just test-hhe
+    just run-mnist-fed-avg-hhe

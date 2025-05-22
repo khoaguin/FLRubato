@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	FLRubato "flhhe"
 	"flhhe/configs"
 	"flhhe/src/utils"
@@ -30,7 +29,11 @@ func main() {
 func RunHEFedAvg() {
 	root := FLRubato.FindRootPath()
 	logger := utils.NewLogger(utils.DEBUG)
-	weightDir := filepath.Join(root, configs.PlaintextWeights)
+	plaintextWeightDir := filepath.Join(root, configs.PlaintextWeights)
+	decryptedWeightDir := filepath.Join(root, configs.DecryptedWeights)
+	if err := os.MkdirAll(decryptedWeightDir, 0755); err != nil {
+		panic(err)
+	}
 
 	// ---- Keys Dealer ----
 	logger.PrintHeader("Keys Dealer")
@@ -39,7 +42,7 @@ func RunHEFedAvg() {
 
 	// ---- Clients ----
 	logger.PrintHeader("Clients")
-	weights := clientWeights(logger, weightDir, true)
+	weights := clientWeights(logger, plaintextWeightDir, true)
 	encryptedWeights := clientEncryptWeights(logger, weights, Slots, ckksParams, ckksEncoder, pk, true)
 
 	// -- Aggregator Server --
@@ -62,8 +65,8 @@ func RunHEFedAvg() {
 	logger.PrintFormatted("Comparing encrypted and plaintext calculations, error = : %f", diff)
 
 	// Save the plaintext and decrypted averages to JSON files
-	saveToJSON(logger, weightDir, "plaintext_avg_fc1.json", plaintextAvgFC1)
-	saveToJSON(logger, weightDir, "plaintext_avg_fc2.json", plaintextAvgFC2)
+	utils.SaveToJSON(logger, decryptedWeightDir, "he_decrypted_avg_fc1.json", decryptedAvgFC1)
+	utils.SaveToJSON(logger, decryptedWeightDir, "he_decrypted_avg_fc2.json", decryptedAvgFC2)
 }
 
 func keysDealerCKKSParams(
@@ -343,22 +346,4 @@ func calculateError(have []float64, want []float64) float64 {
 		sum += math.Abs(have[i] - want[i])
 	}
 	return sum
-}
-
-func saveToJSON(logger utils.Logger, weightDir string, filename string, data []float64) {
-	// Create a file
-	fileName := filepath.Join(weightDir, filename)
-	file, err := os.Create(fileName)
-	if err != nil {
-		panic(err)
-	}
-	defer file.Close()
-
-	// Create an encoder and write the data
-	encoder := json.NewEncoder(file)
-	err = encoder.Encode(data)
-	if err != nil {
-		panic(err)
-	}
-	logger.PrintFormatted("Saved plaintext data to %s", fileName)
 }
