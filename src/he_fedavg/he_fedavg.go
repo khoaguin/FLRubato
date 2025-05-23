@@ -4,6 +4,7 @@ import (
 	FLRubato "flhhe"
 	"flhhe/configs"
 	"flhhe/src/utils"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -30,10 +31,13 @@ func RunHEFedAvg() {
 	root := FLRubato.FindRootPath()
 	logger := utils.NewLogger(utils.DEBUG)
 	plaintextWeightDir := filepath.Join(root, configs.PlaintextWeights)
+
 	decryptedWeightDir := filepath.Join(root, configs.DecryptedWeights)
 	if err := os.MkdirAll(decryptedWeightDir, 0755); err != nil {
 		panic(err)
 	}
+
+	plainHEEncryptedWeightsDir := filepath.Join(root, configs.HEEncryptedWeights, "plain_he")
 
 	// ---- Keys Dealer ----
 	logger.PrintHeader("Keys Dealer")
@@ -43,7 +47,7 @@ func RunHEFedAvg() {
 	// ---- Clients ----
 	logger.PrintHeader("Clients")
 	weights := clientWeights(logger, plaintextWeightDir, true)
-	encryptedWeights := clientEncryptWeights(logger, weights, Slots, ckksParams, ckksEncoder, pk, true)
+	encryptedWeights := clientEncryptWeights(logger, weights, Slots, ckksParams, ckksEncoder, pk, true, true, plainHEEncryptedWeightsDir)
 
 	// -- Aggregator Server --
 	logger.PrintHeader("Aggregator Server")
@@ -160,6 +164,8 @@ func clientEncryptWeights(
 	ecd *ckks.Encoder,
 	pk *rlwe.PublicKey,
 	verbose bool,
+	save bool,
+	savedWeightsDir string,
 ) []utils.ModelWeights {
 	logger.PrintMessage("[Client]: Encrypting the weights homomorphically")
 	for i := range weights {
@@ -169,6 +175,11 @@ func clientEncryptWeights(
 			logger.PrintFormatted("weights[%d].FC1_encrypted type: %T", i, weights[i].FC1Encrypted)
 			logger.PrintFormatted("weights[%d].FC2_encrypted type: %T", i, weights[i].FC2Encrypted)
 			// logger.PrintMessages("metadata: ", weights[i].FC1Encrypted[i].MetaData)
+		}
+		if save {
+			clientWeightDir := filepath.Join(savedWeightsDir, fmt.Sprintf("do_%d", i+1)) // do stands for data owner
+			SaveEncryptedWeights(logger, weights[i].FC1Encrypted, clientWeightDir, "he_encrypted_fc1")
+			SaveEncryptedWeights(logger, weights[i].FC2Encrypted, clientWeightDir, "he_encrypted_fc2")
 		}
 	}
 	return weights
@@ -346,4 +357,60 @@ func calculateError(have []float64, want []float64) float64 {
 		sum += math.Abs(have[i] - want[i])
 	}
 	return sum
+}
+
+// SaveEncryptedWeights saves encrypted weights to binary files
+func SaveEncryptedWeights(
+	logger utils.Logger,
+	weights []*rlwe.Ciphertext,
+	outputDir string,
+	prefix string,
+) {
+	// Create output directory if it doesn't exist
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		panic(err)
+	}
+
+	// Save each ciphertext
+	for _, ct := range weights {
+		fileName := fmt.Sprintf("%s.bin", prefix)
+		filePath := filepath.Join(outputDir, fileName)
+		if err := utils.Serialize(ct, filePath); err != nil {
+			panic(err)
+		}
+		logger.PrintFormatted("Saved ciphertext to %s", filePath)
+	}
+}
+
+// LoadEncryptedWeights loads encrypted weights from binary files
+func LoadEncryptedWeights(
+	logger utils.Logger,
+	params ckks.Parameters,
+	inputDir string,
+	prefix string,
+) []*rlwe.Ciphertext {
+	var weights []*rlwe.Ciphertext
+	i := 0
+
+	// Keep loading ciphertexts until we can't find the next file
+	for {
+		fileName := fmt.Sprintf("%s_%d.bin", prefix, i)
+		filePath := filepath.Join(inputDir, fileName)
+
+		// Check if file exists
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			break
+		}
+
+		// Create new ciphertext and load it
+		ct := rlwe.NewCiphertext(params, 1, params.MaxLevel())
+		if err := utils.Deserialize(ct, filePath); err != nil {
+			panic(err)
+		}
+		weights = append(weights, ct)
+		logger.PrintFormatted("Loaded ciphertext from %s", filePath)
+		i++
+	}
+
+	return weights
 }
