@@ -16,7 +16,14 @@ Please make sure that you have these installed:
 just setup-venv
 ```
 
-This will create a vertual Set up the Python env:
+This will create a vertual Set up the Python env and install the Python packages needed.
+When it's done, please run
+
+```sh
+source .venv/bin/activate
+```
+
+and you are ready.
 
 ## MNIST
 
