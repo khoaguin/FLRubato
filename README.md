@@ -94,3 +94,11 @@ just run-mnist-fed-avg-hhe
 ```
 
 Evaluate the decrypted average weights from FedAvg using HHE
+
+### Everything in one go
+
+```sh
+just run-mnist-e2e
+```
+
+Will run all the above in one go

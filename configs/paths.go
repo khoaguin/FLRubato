@@ -2,10 +2,10 @@ package configs
 
 // paths to plaintext and encrypted weights
 const Configs = "configs/"
-const PlaintextWeights = "weights/mnist/plain"
-const DecryptedWeights = "weights/mnist/decrypted"
-const SymmetricEncryptedWeights = "weights/mnist/symmetric_encrypted"
-const HEEncryptedWeights = "weights/mnist/he_encrypted"
+const PlaintextWeights = "weights/MNIST/plain"
+const DecryptedWeights = "weights/MNIST/decrypted"
+const SymmetricEncryptedWeights = "weights/MNIST/symmetric_encrypted"
+const HEEncryptedWeights = "weights/MNIST/he_encrypted"
 
 // Keys all the required keys to be stored
 const Keys = "keys/keys128L/"
