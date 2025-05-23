@@ -1,6 +1,6 @@
 # FLHHE
 
-Secure Federated Learning Enabled using [Hybrid Homomorphic Encryption](https://github.com/KAIST-CryptLab/RtF-Transciphering)
+> _Secure Federated Learning Enabled using [Hybrid Homomorphic Encryption](https://github.com/KAIST-CryptLab/RtF-Transciphering)._
 
 ## Prerequisite
 
