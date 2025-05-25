@@ -1,4 +1,12 @@
+"""
+Note: this is not full FedAvg since it simply averages the client's weights.
+In a full FedAvg, each client's update is weighted by the number of data samples it
+trained on.
+"""
+
 from pathlib import Path
+import time
+from loguru import logger
 
 from flhhe.mnist.eval import evaluate_model
 from flhhe.mnist.model import (
@@ -18,6 +26,7 @@ def fed_avg(weight_paths: list[Path]) -> None:
         model = load_simple_mnist_model_from_json(weight_path)
         models.append(model)
 
+    start = time.time()
     avg_model = models[0]
     for model in models[1:]:
         for param, avg_param in zip(model.parameters(), avg_model.parameters()):
@@ -25,6 +34,8 @@ def fed_avg(weight_paths: list[Path]) -> None:
 
     for param in avg_model.parameters():
         param.data /= len(models)
+    end = time.time()
+    logger.info(f"Time to average the plaintext model weights: {end - start} seconds")
 
     save_simple_mnist_model_to_json(avg_model, WEIGHTS_DIR / "plaintext_avg.json")
 

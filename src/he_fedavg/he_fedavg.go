@@ -47,17 +47,23 @@ func RunHEFedAvg() {
 	// ---- Clients ----
 	logger.PrintHeader("Clients")
 	weights := clientWeights(logger, plaintextWeightDir, true)
+	t := time.Now()
 	encryptedWeights := clientEncryptWeights(logger, weights, Slots, ckksParams, ckksEncoder, pk, true, true, plainHEEncryptedWeightsDir)
+	logger.PrintRunningTime("Time to encrypt the weights homomorphically", t)
 
 	// -- Aggregator Server --
 	logger.PrintHeader("Aggregator Server")
+	t = time.Now()
 	encryptedAvg := aggregatorEncryptedFedAvg(logger, encryptedWeights, ckksParams, evk)
+	logger.PrintRunningTime("Time for aggregator server to aggregate the encrypted weights", t)
 
 	// -- Debugging --
 	logger.PrintHeader("Testing values")
 	plaintextAvgFC1, plaintextAvgFC2 := plaintextAveraging(logger, weights)
+	t = time.Now()
 	decryptedAvgFC1 := decryptAndDecode(logger, ckksEncoder, encryptedAvg.FC1Encrypted, ckksParams, sk)
 	decryptedAvgFC2 := decryptAndDecode(logger, ckksEncoder, encryptedAvg.FC2Encrypted, ckksParams, sk)
+	logger.PrintRunningTime("Time to decrypt and decode the encrypted average weights", t)
 
 	decryptedAvgFC1 = decryptedAvgFC1[:len(plaintextAvgFC1)]
 	decryptedAvgFC2 = decryptedAvgFC2[:len(plaintextAvgFC2)]

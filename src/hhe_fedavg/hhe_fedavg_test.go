@@ -11,6 +11,7 @@ import (
 	"math"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func loadDecryptCompare(
@@ -43,7 +44,9 @@ func loadDecryptCompare(
 
 	ckksEncoder := hheComponents.CkksEncoder
 	ckksDecryptor := hheComponents.CkksDecryptor
+	t := time.Now()
 	decryptedAvgWeights := ckksEncoder.DecodeComplex(ckksDecryptor.DecryptNew(heAvgWeights), rubatoParams.Params.LogSlots())
+	logger.PrintRunningTime("Time to decrypt the HE ciphertexts of the avg weights from the HHE protocol", t)
 	logger.PrintFormatted("Decrypted avg weights type: %T and length: %d", decryptedAvgWeights, len(decryptedAvgWeights))
 
 	// Calculate the error

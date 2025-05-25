@@ -75,13 +75,19 @@ func processClient(
 	rubato.Reset(rubatoParams.RubatoModDown[0])
 
 	// Generate and process keystreams (Z)
+	t := time.Now()
 	fvKeyStreams := generateKeystreams(logger, flClient, rubatoParams, hheComponents, rubato, symKeyFVCiphertext)
+	logger.PrintRunningTime("[Server - Offline] Total time to produce Z", t)
 
 	// Scales up the symmetric ciphertext into FV-ciphertext space (C)
+	t = time.Now()
 	plaintexts := fvScaleUpSymCipher(logger, flClient, rubatoParams, hheComponents)
+	logger.PrintRunningTime("[Server - Online] Total time to scale up the symmetric ciphertext into FV-ciphertext space and produce C", t)
 
 	// Transciphers the symmetric ciphertext into CKKS ciphertext (M)
+	t = time.Now()
 	transciphering(logger, rootPath, flClient, rubatoParams, hheComponents, fvKeyStreams, plaintexts)
+	logger.PrintRunningTime("[Server - Online] Total time to transcipher, verify the accuracy of the ciphertext and save the ciphertext", t)
 }
 
 // generateKeystreams evaluates the keystreams and performs linear transformation
@@ -152,12 +158,17 @@ func transciphering(
 		ciphertext := createInitialCiphertext(rubatoParams, plaintexts, s)
 
 		logger.PrintMessage("Subtracting the homomorphically evaluated keystream Z from the symmetric ciphertext C (produce X)")
+
+		t := time.Now()
 		hheComponents.FvEvaluator.Sub(ciphertext, fvKeyStreams[s], ciphertext)
+
 		hheComponents.FvEvaluator.TransformToNTT(ciphertext, ciphertext)
 		setScale(ciphertext, rubatoParams)
 
 		// Perform half-bootstrapping
 		ctBoot := performHalfBoot(logger, ciphertext, hheComponents)
+
+		logger.PrintRunningTime("[Server - Online] Total time to transcipher to produce M", t)
 
 		// Generate debug values
 		valuesWant := generateDebugValues(flClient, rubatoParams, s)
@@ -229,6 +240,7 @@ func heFedAvg(
 	logger.PrintFormatted("Ciphertexts: %+v", ciphertexts)
 
 	// Do HEFedAvg
+	t := time.Now()
 	avgCiphertexts := make([]*RtF.Ciphertext, rubatoParams.OutputSize)
 	for i := range rubatoParams.OutputSize {
 		avgCiphertexts[i] = ciphertexts[0][i].CopyNew().Ciphertext()
@@ -239,6 +251,7 @@ func heFedAvg(
 	for i := range rubatoParams.OutputSize {
 		avgCiphertexts[i] = hheComponents.CkksEvaluator.MultByConstNew(avgCiphertexts[i], 1/float64(len(flClients)))
 	}
+	logger.PrintRunningTime("Time to aggregate the ciphertexts", t)
 	logger.PrintFormatted("AvgCiphertexts: %+v", avgCiphertexts)
 
 	// Save the average ciphertexts

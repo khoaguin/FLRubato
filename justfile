@@ -61,17 +61,17 @@ train-mnist-model:
 
 [group('mnist-python')]
 run-mnist-fed-avg:
-    echo "{{ _cyan }}Running MNIST FedAvg {{ _nc }}"
+    echo "{{ _cyan }}Run and evaluate plaintext MNIST FL Avg Aggregation {{ _nc }}"
     uv run -m flhhe.mnist.fed_avg
 
 [group('mnist-python')]
 run-mnist-fed-avg-he:
-    echo "{{ _cyan }}Running MNIST FedAvg using plain HE {{ _nc }}"
+    echo "{{ _cyan }}Evaluate decrypted average model weights produced by plain HE {{ _nc }}"
     uv run -m flhhe.mnist.fed_avg_he
 
 [group('mnist-python')]
 run-mnist-fed-avg-hhe:
-    echo "{{ _cyan }}Running MNIST FedAvg using HHE {{ _nc }}"
+    echo "{{ _cyan }}Evaluate decrypted average model weights produced by HHE {{ _nc }}"
     uv run -m flhhe.mnist.fed_avg_hhe
 
 
@@ -79,20 +79,20 @@ run-mnist-fed-avg-hhe:
 # ---------------------------------------------------------------------------------------------------------------------
 [group('mnist-go')]
 run-he:
-    echo "{{ _cyan }}Running HE FedAvg {{ _nc }}"
+    echo "{{ _cyan }}Running FL Avg Aggregation with HE {{ _nc }}"
     go run src/he_fedavg/he_fedavg.go
 
 # ---------------------------------------------------------------------------------------------------------------------
 [group('mnist-go')]
 run-hhe:
-    echo "{{ _cyan }}Running HHE FedAvg {{ _nc }}"
+    echo "{{ _cyan }}Running FL Avg Aggregation with HHE {{ _nc }}"
     go run src/hhe_fedavg/hhe_fedavg.go
     echo "{{ _green }}HHE FedAvg completed {{ _nc }}"
 
 # ---------------------------------------------------------------------------------------------------------------------
 [group('mnist-go')]
 test-hhe:
-    echo "{{ _cyan }}Running HHE MNIST weight tests {{ _nc }}"
+    echo "{{ _cyan }}Decrypt and compare HHE MNIST weight tests {{ _nc }}"
     go test src/hhe_fedavg/hhe_fedavg_test.go -v
     echo "{{ _green }}HHE MNIST weight tests completed {{ _nc }}"
 

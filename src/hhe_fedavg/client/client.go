@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"flhhe/configs"
 	"flhhe/src/RtF"
@@ -63,6 +64,7 @@ func RunFLClient(
 	symKey := keys_dealer.LoadSymmKey(symKeyPath, params.Blocksize)
 
 	logger.PrintMessage("[Client - Offline] Generating the keystream z")
+	t := time.Now()
 	keystream := make([][]uint64, params.Params.N())
 	for i := range params.Params.N() {
 		keystream[i] = RtF.PlainRubato(
@@ -74,15 +76,20 @@ func RunFLClient(
 			params.Params.PlainModulus(),
 			params.Sigma)
 	}
+	logger.PrintRunningTime("Time to generate the keystream", t)
 
+	t = time.Now()
 	logger.PrintMessage("[Client - Online] Encrypting the plaintext data using the symmetric key stream")
 	plainCKKSRingTs := EncryptData(logger, params, hheComponents.CkksEncoder, data, keystream)
+	logger.PrintRunningTime("Time to encrypting the plaintext data using the symmetric key stream", t)
 
 	// Save the symmetric encrypted data
+	t = time.Now()
 	logger.PrintMessage("[Client - Online] Saving the symmetric encrypted data")
 	ciphertextDir := filepath.Join(rootPath, configs.SymmetricEncryptedWeights)
 	os.MkdirAll(ciphertextDir, 0755)
 	SavePlaintextRingTArray(logger, plainCKKSRingTs, ciphertextDir, clientID)
+	logger.PrintRunningTime("Time to save the symmetric encrypted data", t)
 
 	return &FLClient{
 		ClientID:      clientID,

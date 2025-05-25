@@ -4,6 +4,8 @@ _Secure Federated Learning using [Hybrid Homomorphic Encryption](https://github.
 
 ## Prerequisite
 
+> ⚠️ Caution: Running everything below requires a machine with at least 64 GB of RAM
+
 Please make sure that you have these installed:
 
 1. The `just` command runner. Installation guide [here](https://github.com/casey/just?tab=readme-ov-file#installation)
