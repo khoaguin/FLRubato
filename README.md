@@ -3,8 +3,7 @@
 _Secure Federated Learning using [Hybrid Homomorphic Encryption](https://github.com/KAIST-CryptLab/RtF-Transciphering)._
 
 <div style="text-align: center;">
-<a data-flickr-embed="true" href="https://www.flickr.com/photos/193804771@N07/54545350463/in/dateposted-public/" title="FLHHE-MNIST"><img src="https://live.staticflickr.com/65535/54545350463_8fb9cb3318_n.jpg" width="320" height="274" alt="FLHHE-MNIST"/>
-</a>
+<a data-flickr-embed="true" href="https://www.flickr.com/photos/193804771@N07/54545350463/in/dateposted-public/" title="FLHHE-MNIST"><img src="https://live.staticflickr.com/65535/54545350463_8fb9cb3318_w.jpg" width="400" height="343" alt="FLHHE-MNIST"/></a>
 </div>
 
 ## Prerequisite
